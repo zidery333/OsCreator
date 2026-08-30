@@ -561,7 +561,7 @@ def test_no_option_is_silently_ignored(t: Case) -> None:
             if not isinstance(call, ast.Call):
                 continue
             which = getattr(call.func, "id", "")
-            if which not in ("_flag", "_opt"):
+            if which not in ("_flag", "_opt", "_count"):
                 continue
             for arg in (call.args[1:] if which == "_flag" else call.args[1:2]):
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
@@ -821,6 +821,53 @@ def test_archive_and_restore_round_trip(t: Case) -> None:
     restored = next(i for i in t.box.items() if i["id"] == ident)
     t.eq(restored["bucket"], "Work", "restore puts it back where it came from")
     t.eq(restored["id"], ident, "the ID never changed")
+
+
+@test
+def test_undo_of_a_close_puts_the_header_back_too(t: Case) -> None:
+    """Undoing a close has to give the item its own state back.
+
+    `os close` writes `status: archived` into the header and *then* moves the
+    folder. Snapshotting during the move caught the rewritten header, so undo
+    put the item back in Work still calling itself archived — and status is
+    load-bearing here, so the item silently stopped counting as on the go."""
+    t.box.run("new", "work", "Undo me completely", "--domain", "engineering")
+    t.box.run("index")
+    item = next(i for i in t.box.items() if i["title"] == "Undo me completely")
+    ident, spine = item["id"], t.box.root / item["path"] / "README.md"
+    before = spine.read_text()
+
+    t.box.run("close", ident)
+    t.box.run("undo")
+    back = next(i for i in t.box.items() if i["id"] == ident)
+    t.eq(back["bucket"], "Work", "the folder came back out of the archive")
+    t.eq(back["status"], "pushing", "and is being pushed again, not still archived")
+    meta, _ = engine.parse_frontmatter((t.box.root / back["path"] / "README.md").read_text())
+    t.ok("archived" not in meta, "no leftover archived: stamp")
+    t.ok("origin" not in meta, "no leftover origin: stamp")
+    t.eq((t.box.root / back["path"] / "README.md").read_text(), before,
+         "the file says exactly what it said before the close")
+
+
+@test
+def test_a_flip_between_phases_can_be_taken_back(t: Case) -> None:
+    """`os undo` takes back the *last* thing, including a hold or a push.
+
+    Flipping a phase used to journal nothing at all, so undo reached past it
+    and reversed whatever came before — the one behaviour undo must never have."""
+    t.box.run("new", "work", "Flip me back and forth", "--domain", "engineering")
+    t.box.run("index")
+    ident = next(i["id"] for i in t.box.items() if i["title"] == "Flip me back and forth")
+
+    t.box.run("hold", ident)
+    held = next(i for i in t.box.items() if i["id"] == ident)
+    t.eq(held["status"], "holding", "it is being held")
+
+    proc = t.box.run("undo")
+    t.ok(ident in proc.stdout, "undo names the flip it reversed")
+    after = next(i for i in t.box.items() if i["id"] == ident)
+    t.eq(after["status"], "pushing", "and the phase went back to what it was")
+    t.ok((t.box.root / after["path"]).exists(), "nothing else moved")
 
 
 # ---------------------------------------------------------------------------
@@ -2940,6 +2987,95 @@ def test_the_template_is_shippable(t: Case) -> None:
         t.ok(command in listed, f"`os help` lists {command}")
     for gone in ("CHEATSHEET.md", "GUIDE.pdf", "GUIDE.md"):
         t.ok(not (root / gone).exists(), f"no {gone} to fall out of date")
+
+
+@test
+def test_a_hand_edited_settings_file_never_crashes(t: Case) -> None:
+    """`.os/config.json` and `.os/words.json` are files people are invited to
+    edit. A line deleted out of one of them has to produce a sentence, not a
+    Python traceback — the folder is somebody's filing cabinet, not a dev tool."""
+    config = t.box.root / ".os" / "config.json"
+    words = t.box.root / ".os" / "words.json"
+    state = t.box.root / ".os" / "state.json"
+    keep = {p: p.read_text() for p in (config, words, state)}
+    try:
+        # one setting gone
+        data = json.loads(keep[config])
+        del data["thresholds"]["stale_project_days"]
+        config.write_text(json.dumps(data, indent=2))
+        proc = t.box.run("status")
+        t.ok("Traceback" not in proc.stderr, "a missing threshold falls back to the default")
+
+        # the whole block gone
+        data.pop("thresholds", None)
+        data.pop("behaviour", None)
+        config.write_text(json.dumps(data, indent=2))
+        proc = t.box.run("status")
+        t.ok("Traceback" not in proc.stderr, "a missing settings block is survivable too")
+
+        # no folders at all: that one cannot be defaulted, so it must be said
+        config.write_text(json.dumps({"name": "Zenith"}, indent=2))
+        broken = t.box.run("status", expect=1)
+        t.ok("buckets" in broken.stderr, "a config with no folders says which block is missing")
+        t.ok("Traceback" not in broken.stderr, "and says it as a sentence")
+        config.write_text(keep[config])
+
+        # a vocabulary edited down to nothing is reported, not fatal
+        words.write_text(json.dumps({"$schema": "zenith/words/2"}, indent=2))
+        proc = t.box.run("status")
+        t.ok("Traceback" not in proc.stderr, "an empty vocabulary still runs")
+        codes = {i["code"] for i in t.box.json("check", expect=None)["issues"]}
+        t.ok("no-vocabulary" in codes, "and check says the vocabulary is empty")
+        words.write_text(keep[words])
+
+        # state edited into something that is not state at all
+        state.write_text("[1, 2, 3]")
+        proc = t.box.run("status")
+        t.ok("Traceback" not in proc.stderr, "unreadable state is treated as no state")
+    finally:
+        for path, text in keep.items():
+            path.write_text(text)
+        t.box.run("index")
+
+
+@test
+def test_a_number_option_wants_a_number(t: Case) -> None:
+    """`--limit all` is a guess at the spelling, not a reason to show a stack."""
+    proc = t.box.run("find", "anything", "--limit", "all", expect=1)
+    t.ok("Traceback" not in proc.stderr, "no traceback")
+    t.ok("--limit" in proc.stderr, "it names the option")
+    t.box.run("find", "anything", "--limit", "3", expect=None)
+
+
+@test
+def test_the_launcher_drives_the_folder_it_sits_in(t: Case) -> None:
+    """A ZENITH_HOME left over from another folder must not redirect this one.
+
+    Exported once in a shell profile — or by a hook — it used to make every
+    other copy of `./os` quietly file into somewhere else entirely."""
+    elsewhere = t.box.tmp / "other-zenith"
+    shutil.copytree(t.box.root, elsewhere, symlinks=True)
+    env = dict(os.environ, ZENITH_HOME=str(elsewhere), NO_COLOR="1")
+    proc = subprocess.run([str(t.box.root / "os"), "status"], capture_output=True,
+                          text=True, encoding="utf-8", errors="replace",
+                          cwd=str(t.box.root), env=env, timeout=120)
+    t.eq(proc.returncode, 0, "it runs")
+    t.ok(str(t.box.root) in proc.stdout, "and reports the folder it actually sits in")
+    t.ok(str(elsewhere) not in proc.stdout, "not the one the environment named")
+    shutil.rmtree(elsewhere, ignore_errors=True)
+
+
+@test
+def test_punctuation_in_a_title_cannot_break_the_index(t: Case) -> None:
+    """A pipe in a title is ordinary English and used to be a broken table row."""
+    t.box.run("new", "note", "Bench | results [draft]")
+    t.box.run("index")
+    rows = [ln for ln in (t.box.root / "INDEX.md").read_text().split("\n")
+            if "Bench" in ln]
+    t.eq(len(rows), 1, "the note is listed once")
+    t.eq(len(re.findall(r"(?<!\\)\|", rows[0])), 5,
+         "and it is still a four-column row")
+    t.ok("\\|" in rows[0] and "\\[" in rows[0], "the punctuation is escaped, not dropped")
 
 
 @test

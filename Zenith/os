@@ -37,5 +37,8 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
-export ZENITH_HOME="${ZENITH_HOME:-$HERE}"
+# Always this folder, never one inherited from the environment. A ZENITH_HOME
+# left over from another folder — exported in a shell profile, or by a hook —
+# would otherwise make ./os here quietly drive somewhere else entirely.
+export ZENITH_HOME="$HERE"
 exec "$PY" "$ENGINE" "$@"

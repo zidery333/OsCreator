@@ -677,6 +677,21 @@ def find_root(start: Path | None = None) -> Path:
 # ---------------------------------------------------------------------------
 
 
+#: What every threshold and setting is, when the file does not say. These files
+#: are edited by hand, and a missing line must not be the difference between a
+#: working folder and a stack trace: whatever is there wins, and the rest of the
+#: settings fall back to these.
+DEFAULT_THRESHOLDS = {
+    "category_split": 12, "category_max_items": 99, "max_categories_per_bucket": 9,
+    "stale_project_days": 30, "dormant_project_days": 75, "rules_max_lines": 160,
+    "skill_body_max_lines": 120, "duplicate_similarity": 0.86, "min_classify_score": 2.0,
+}
+DEFAULT_BEHAVIOUR = {
+    "keep_undo_steps": 20, "keep_backups": 3, "colour": "auto",
+    "date_format": "%Y-%m-%d",
+}
+
+
 class Zenith:
     def __init__(self, root: Path):
         self.root = root
@@ -689,11 +704,30 @@ class Zenith:
         legacy = self.dot / "taxonomy.json"
         self.taxonomy = self._load_json(legacy if legacy.exists() and not words.exists()
                                         else words, required=True)
-        self.state = self._load_json(self.dot / "state.json") or {
-            "counters": {}, "undo": [], "history": [], "created": now_iso(),
-        }
-        self.thresholds = self.config["thresholds"]
-        self.behaviour = self.config["behaviour"]
+        if not isinstance(self.config, dict) or not isinstance(self.config.get("buckets"), dict) \
+                or not self.config["buckets"]:
+            die(".os/config.json has no `buckets` block, so there are no folders to file into.\n"
+                "     Restore it from a fresh copy of this folder.")
+        if not isinstance(self.taxonomy, dict):
+            die(".os/words.json should be a block of settings in { } — restore it "
+                "from a fresh copy of this folder.")
+        self.taxonomy.setdefault("domains", {})
+        self.taxonomy.setdefault("intent", {})
+        # A state file edited into something that is not a block of settings is
+        # debris rather than state: nothing in it can be read, and refusing to
+        # run over it would lock somebody out of their own folder.
+        loaded = self._load_json(self.dot / "state.json")
+        self.state = loaded if isinstance(loaded, dict) else {}
+        self.state.setdefault("counters", {})
+        self.state.setdefault("undo", [])
+        self.state.setdefault("history", [])
+        self.state.setdefault("created", now_iso())
+        for name, spec in self.config["buckets"].items():
+            spec.setdefault("role", "note")
+            spec.setdefault("label", name)
+            spec.setdefault("blurb", "")
+        self.thresholds = {**DEFAULT_THRESHOLDS, **(self.config.get("thresholds") or {})}
+        self.behaviour = {**DEFAULT_BEHAVIOUR, **(self.config.get("behaviour") or {})}
         self.date_fmt = self.behaviour.get("date_format", "%Y-%m-%d")
         self._pending: list[dict] = []
         self._rel_cache: dict[str, str] = {}
@@ -755,7 +789,10 @@ class Zenith:
     # -- ids ----------------------------------------------------------------
 
     def next_id(self, bucket: str) -> str:
-        code = self.buckets()[bucket]["code"]
+        code = self.buckets()[bucket].get("code")
+        if not code:
+            die(f"the {bucket}/ folder has no `code:` in .os/config.json, so it "
+                "cannot hand out numbers")
         counters = self.state.setdefault("counters", {})
         n = int(counters.get(code, 0)) + 1
         counters[code] = n
@@ -798,13 +835,18 @@ class Zenith:
         """Copy the text content of `src` aside before anything rewrites it.
 
         Only text, only small files, only a bounded number of them: a snapshot
-        is insurance, not a second copy of the folder."""
+        is insurance, not a second copy of the folder.
+
+        The *first* snapshot of a file in a run is the one that is kept. One
+        command can touch the same file twice — `os close` rewrites the header
+        and then moves the folder — and the second copy would be the rewritten
+        one, which is exactly what undo is supposed to put back."""
         try:
             targets = [src] if src.is_file() else [p for p in sorted(src.rglob("*")) if p.is_file()]
         except OSError:
             return
         for f in targets[:cap_files]:
-            if f.suffix.lower() not in TEXT_SUFFIXES:
+            if f.suffix.lower() not in TEXT_SUFFIXES or self.rel(f) in self._snapshots:
                 continue
             try:
                 if f.stat().st_size > cap_bytes:
@@ -2237,6 +2279,16 @@ class Sorter:
 
 GENERATED = "<!-- written by Zenith. Don't edit by hand — it gets overwritten. -->"
 
+
+def md_cell(text: str, link_text: bool = False) -> str:
+    """Text that will sit in a markdown table, and mean what it says.
+
+    A title reading `Bench | results [draft]` is ordinary English and a broken
+    table row: the pipe opens a column that is not there, and the brackets eat
+    the link. Nobody should have to avoid punctuation to be indexed."""
+    out = str(text).replace("|", "\\|")
+    return out.replace("[", "\\[").replace("]", "\\]") if link_text else out
+
 HOOK_BLURBS = {
     "session-start.sh": "Tells your AI where things stand, before you say anything.",
     "mark-dirty.sh": "Notices when a file changed.",
@@ -2302,7 +2354,8 @@ class Indexer:
             "| --- | --- | --- |",
         ]
         for bucket, spec in self.os.buckets().items():
-            lines.append(f"| **{bucket}** | {spec['blurb']} | {registry['buckets'][bucket]['count']} |")
+            lines.append(f"| **{bucket}** | {md_cell(spec['blurb'])} | "
+                         f"{registry['buckets'][bucket]['count']} |")
 
         for bucket, spec in self.os.buckets().items():
             pool = [it for it in items if it.bucket == bucket]
@@ -2321,8 +2374,9 @@ class Indexer:
                 for it in group:
                     link = (relative_to_root(it.path, self.os.root)
                             if it.path.exists() else "").replace(" ", "%20")
-                    lines.append(f"| `{it.ident or '—'}` | [{it.title}]({link}) | "
-                                 f"{it.status or '—'} | {it.updated or '—'} |")
+                    lines.append(f"| `{it.ident or '—'}` | "
+                                 f"[{md_cell(it.title, link_text=True)}]({link}) | "
+                                 f"{md_cell(it.status or '—')} | {it.updated or '—'} |")
                 lines.append("")
 
         tools = [it for it in items if it.bucket == TOOLKIT]
@@ -2470,6 +2524,14 @@ class Doctor:
                           f"AGENTS.md is {n} lines (cap {cap}) — it is read on every single turn, "
                           "so move long procedures into a skill",
                           "AGENTS.md", "move sections into .claude/skills/")
+
+        # Filing is word matching, so an empty vocabulary is not a crash any
+        # more — it is a folder that quietly stops guessing. Say so.
+        if not self.os.taxonomy.get("domains"):
+            self.flag("warn", "no-vocabulary",
+                      ".os/words.json lists no subjects, so nothing can be grouped by "
+                      "subject any more", ".os/words.json",
+                      "restore it from a fresh copy of this folder")
 
         settings = root / ".claude" / "settings.json"
         if settings.exists():
@@ -2932,6 +2994,10 @@ class Archivist:
             die(f"{ident} is already in the archive — ./os back {ident} brings it out")
         dest = self.os.root / shelf / today()[:4] / item.bucket / item.path.name
         if item.spine and item.spine.exists():
+            # Before the header is touched, not after the move: undo restores
+            # what a file *said* as well as where it was, and a snapshot taken
+            # afterwards would put the archived header back on a live item.
+            self.os.snapshot(item.spine)
             meta, body = parse_frontmatter(read_text(item.spine))
             # What it was before it left, so ./os back can put it back as it was
             # rather than waking every filed note up as work with a next action.
@@ -2953,6 +3019,7 @@ class Archivist:
             die(f"{ident} is not in the archive — ./os show {ident} says where it is")
         meta, body = ({}, "")
         if item.spine and item.spine.exists():
+            self.os.snapshot(item.spine)      # see archive(): before the rewrite
             meta, body = parse_frontmatter(read_text(item.spine))
         # Where it actually came from, recorded when it was put away. The trail
         # (<year>/<bucket>/) is the fallback, and only then a default.
@@ -3448,6 +3515,22 @@ def _opt(argv: list[str], name: str, default: str = "") -> str:
     return default
 
 
+def _count(argv: list[str], name: str, default: int) -> int:
+    """A `--limit`-style option, read as a number.
+
+    `./os find x --limit all` is somebody guessing at the spelling, and int()
+    answers that with a traceback — which reads as a broken program rather than
+    a mistyped word. Say what was wrong with it instead."""
+    raw = _opt(argv, name).strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        die(f"{name} wants a number, not {raw!r}   e.g.  {name} 20")
+    return value if value > 0 else default
+
+
 def cmd_status(os_: Zenith, argv: list[str]) -> int:
     """One screen. Plain sentences, not a dashboard."""
     if _flag(argv, "--json"):
@@ -3506,7 +3589,8 @@ def cmd_status(os_: Zenith, argv: list[str]) -> int:
         Out.raw("  " + paint(plural(len(staged), "thing") + " you saved never got filed.", S.AMBER)
                 + paint("   ./os sort", S.FAINT))
     if errors:
-        Out.raw("  " + paint(plural(len(errors), "thing") + " need fixing.", S.RED)
+        Out.raw("  " + paint(plural(len(errors), "thing")
+                             + (" needs" if len(errors) == 1 else " need") + " fixing.", S.RED)
                 + paint("   ./os check --fix", S.FAINT))
     elif health["score"] < 85:
         Out.raw("  " + paint("A few small things could be tidier.", S.AMBER)
@@ -3773,9 +3857,14 @@ def _set_phase(os_: Zenith, argv: list[str], phase: str) -> int:
     with Lock(os_, "phase"):
         meta, body = parse_frontmatter(read_text(item.spine))
         was = normalize_status(meta.get("status"), "project")
+        # Snapshot and journal it, or `./os undo` after a flip silently reverses
+        # whatever came *before* the flip instead — an empty run leaves no entry
+        # on the stack, and the promise is that undo takes back the last thing.
+        os_.snapshot(item.spine)
         meta["status"] = phase
         meta["updated"] = today()
         write_text(item.spine, compose(meta, body))
+        os_.record("edit", os_.rel(item.spine))
         os_.commit(f"{item.ident} {was} -> {phase}")
         Indexer(os_).build()
     Out.title("pushing" if phase == PUSHING else "holding")
@@ -3803,7 +3892,7 @@ def cmd_find(os_: Zenith, argv: list[str]) -> int:
     as_json = _flag(argv, "--json")
     kind = _opt(argv, "--kind")
     bucket = _opt(argv, "--in")
-    limit = int(_opt(argv, "--limit", "20") or 20)
+    limit = _count(argv, "--limit", 20)
     query = " ".join(argv).strip()
     if not query:
         die("what are you looking for?   ./os find token refresh")
@@ -4235,7 +4324,7 @@ def cmd_learn(os_: Zenith, argv: list[str]) -> int:
     want_list = _flag(argv, "--list", "-l")
     show_cache = _flag(argv, "--cached")
     force = _flag(argv, "--force")
-    limit = int(_opt(argv, "--limit", "0") or L.LIST_LIMIT)
+    limit = _count(argv, "--limit", L.LIST_LIMIT)
     forget = _flag(argv, "--forget")
     rest = _theirs(argv)      # a YouTube id can begin with a dash
 

@@ -175,7 +175,8 @@ def listing(url: str, limit: int = LIST_LIMIT) -> List[dict]:
             "url": f"https://www.youtube.com/watch?v={vid}",
         })
     if not rows and done.returncode:
-        raise RuntimeError((done.stderr or "").strip().splitlines()[-1:] or ["nothing came back"])
+        said = (done.stderr or "").strip().splitlines()
+        raise RuntimeError(said[-1] if said else "nothing came back")
     return rows
 
 
