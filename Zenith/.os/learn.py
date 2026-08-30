@@ -146,6 +146,68 @@ def _run(args: List[str], timeout: int = FETCH_TIMEOUT) -> subprocess.CompletedP
     return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
 
 
+#: What yt-dlp says, and what it means to somebody who is not yt-dlp. Ordered:
+#: the first match wins, so put the specific causes above the general ones.
+#: Everything on the left is a fragment of a real stderr line, lowercased.
+_WHY = (
+    ("sign in to confirm your age", "that one is age-restricted, so its words "
+                                    "can't be fetched without signing in"),
+    ("confirm you're not a bot", "YouTube asked for a sign-in — try again in a "
+                                 "few minutes"),
+    ("sign in to confirm", "YouTube asked for a sign-in — try again in a few minutes"),
+    ("private video", "that one is private"),
+    ("members-only", "that one is for channel members only"),
+    ("removed by the uploader", "that one has been taken down"),
+    ("video unavailable", "that one isn't available — deleted, private, or "
+                          "blocked where you are"),
+    ("is not available", "that one isn't available — deleted, private, or "
+                         "blocked where you are"),
+    ("429", "YouTube is rate-limiting this machine — wait a few minutes and "
+            "try again"),
+    ("too many requests", "YouTube is rate-limiting this machine — wait a few "
+                          "minutes and try again"),
+    ("failed to resolve", "couldn't reach YouTube — check the connection"),
+    ("temporary failure in name resolution", "couldn't reach YouTube — check "
+                                             "the connection"),
+    ("nodename nor servname", "couldn't reach YouTube — check the connection"),
+    ("unable to download webpage", "couldn't reach YouTube — check the connection"),
+    ("urlopen error", "couldn't reach YouTube — check the connection"),
+    ("no such file or directory", "yt-dlp could not write the subtitles to disk"),
+    ("unsupported url", "yt-dlp doesn't know that site"),
+    ("no video formats", "there is nothing fetchable at that link"),
+)
+
+
+def why_empty(done: subprocess.CompletedProcess) -> str:
+    """Why nothing came back, in a sentence somebody can act on.
+
+    Every failure used to be reported as "no captions on this one", which is
+    the one thing it usually was not: a deleted video, a rate-limit, a dropped
+    connection and a genuinely silent video all said the same wrong thing, and
+    the only honest response to it — go and find another source — was wasted
+    work in three cases out of four. yt-dlp already knows which it was; it just
+    says so in its own language, on stderr."""
+    said = (done.stderr or "").lower()
+    for fragment, meaning in _WHY:
+        if fragment in said:
+            return meaning
+    if "no subtitles" in said or "requested format" in said:
+        return "no captions on this one"
+    # Something yt-dlp knows a name for and this does not. Its own last word
+    # beats a guess — but only the lines it marked ERROR: the rest are notes to
+    # itself about players and formats, and reading one out as the reason is
+    # how a working folder starts sounding broken.
+    for line in reversed((done.stderr or "").strip().splitlines()):
+        if not line.strip().startswith("ERROR"):
+            continue
+        line = re.sub(r"^\s*ERROR:\s*(\[[^\]]+\]\s*)?", "", line.strip())
+        line = re.sub(r"\s*\(caused by .*$", "", line)
+        line = re.sub(r"^[A-Za-z0-9_-]{11}:\s*", "", line)
+        if line and len(line) < 200:
+            return line
+    return "no captions on this one"
+
+
 def listing(url: str, limit: int = LIST_LIMIT) -> List[dict]:
     """What a channel has, cheaply — titles and view counts, nothing fetched.
 
@@ -158,8 +220,7 @@ def listing(url: str, limit: int = LIST_LIMIT) -> List[dict]:
         raise RuntimeError("no-ytdlp")
     fields = "%(id)s\t%(view_count)s\t%(upload_date)s\t%(duration)s\t%(title)s"
     done = _run([exe, "--flat-playlist", "--playlist-end", str(limit),
-                 "--ignore-errors", "--no-warnings", "--print", fields,
-                 as_listing(url)])
+                 "--ignore-errors", "--print", fields, as_listing(url)])
     rows = []
     for line in done.stdout.splitlines():
         bits = line.split("\t")
@@ -174,10 +235,45 @@ def listing(url: str, limit: int = LIST_LIMIT) -> List[dict]:
             "title": title,
             "url": f"https://www.youtube.com/watch?v={vid}",
         })
-    if not rows and done.returncode:
-        said = (done.stderr or "").strip().splitlines()
-        raise RuntimeError(said[-1] if said else "nothing came back")
+    if not rows:
+        # A channel with nothing on it is a real answer; anything else here was
+        # a failure, and it used to be re-thrown as whatever yt-dlp's last line
+        # of stderr happened to be — which for a name that would not resolve was
+        # a hundred and eighty characters of nested TransportError.
+        raise RuntimeError(why_empty(done) if done.returncode else "nothing came back")
     return rows
+
+
+#: Which caption tracks to ask for, in one request. English first because it is
+#: what the rest of this folder is written in — then, as a fallback, whatever
+#: the video was actually spoken in: YouTube always names that track `<lang>-orig`,
+#: so this is one extra file and never a hundred. Before it existed, a video in
+#: any other language reported "no captions on this one" while sitting on a full
+#: set of them, and there was no way to learn anything from a source that wasn't
+#: in English.
+SUB_LANGS = "en.*,.*-orig"
+
+
+def _track_lang(path: Path) -> str:
+    """The language of a subtitle file, from the name yt-dlp gave it.
+
+    `<id>.en.vtt`, `<id>.ja-orig.vtt` — the middle piece is the language.
+    `-orig` is YouTube saying "this is the one it was spoken in", which is a
+    fact about the track and not about the language, so it is dropped."""
+    bits = path.name.split(".")
+    lang = bits[-2] if len(bits) >= 3 else ""
+    return lang[:-5] if lang.endswith("-orig") else lang
+
+
+def _track_rank(path: Path):
+    """Sort key: English first, then the shortest name.
+
+    Was `".auto." in name`, which is nothing yt-dlp has ever written — auto
+    captions land under the plain language code like any other. So the test
+    never fired, and with more than one language on offer the winner was
+    whichever sorted first alphabetically."""
+    lang = _track_lang(path)
+    return (not lang.startswith("en"), len(path.name), path.name)
 
 
 def transcript(root: Path, url: str, force: bool = False) -> dict:
@@ -194,23 +290,30 @@ def transcript(root: Path, url: str, force: bool = False) -> dict:
         raise RuntimeError("no-ytdlp")
     with tempfile.TemporaryDirectory() as tmp:
         done = _run([exe, "--skip-download", "--write-subs", "--write-auto-subs",
-                     "--sub-lang", "en.*", "--sub-format", "vtt",
-                     "--no-warnings", "-o", str(Path(tmp) / "%(id)s"),
+                     "--sub-langs", SUB_LANGS, "--sub-format", "vtt",
+                     # Keep going when one track of the several asked for fails;
+                     # without it a single 429 on the English track threw away
+                     # the original-language one that would have downloaded fine.
+                     "--ignore-errors",
+                     "-o", str(Path(tmp) / "%(id)s"),
                      f"https://www.youtube.com/watch?v={vid}"])
         vtts = sorted(Path(tmp).glob("*.vtt"))
         if not vtts:
-            why = "no captions on this one"
-            err = (done.stderr or "").lower()
-            if "sign in" in err or "bot" in err:
-                why = "YouTube asked for a sign-in — try again later"
-            return {"id": vid, "ok": False, "why": why}
-        # A hand-written track beats machine captions where both exist.
-        best = min(vtts, key=lambda p: (".auto." in p.name, len(p.name)))
+            return {"id": vid, "ok": False, "why": why_empty(done)}
+        best = min(vtts, key=_track_rank)
+        lang = _track_lang(best)
         text = clean_vtt(best)
     out = cache_dir(root) / f"{vid}.txt"
     out.write_text(text, encoding="utf-8")
-    return {"id": vid, "ok": True, "path": str(out),
-            "words": len(text.split()), "cached": False}
+    result = {"id": vid, "ok": True, "path": str(out), "language": lang,
+              "words": len(text.split()), "cached": False}
+    if lang and not lang.startswith("en"):
+        # Said out loud rather than left to be noticed halfway down a wall of
+        # text somebody cannot read. It is still worth having — quoting it is
+        # what makes a claim checkable — but whoever is reading needs to know
+        # they are about to translate rather than skim.
+        result["note"] = f"these captions are in {lang}, not English"
+    return result
 
 
 def transcripts(root: Path, urls: Iterable[str], force: bool = False) -> List[dict]:
@@ -365,8 +468,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     root = find_root()
 
     def emit(payload) -> int:
+        """Print the answer, and exit non-zero when it is a refusal.
+
+        `ok` and the exit status have to agree: a script that only looks at one
+        of them must not get a different story from the one that looks at the
+        other."""
         print(json.dumps(payload, indent=2))
-        return 0
+        return 0 if payload.get("ok", True) else 1
 
     if command in ("-h", "--help", "help"):
         return emit({"commands": {
@@ -386,7 +494,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         if command == "get":
             if not rest:
                 return emit({"ok": False, "why": "give me one or more video links"})
-            return emit({"ok": True, "results": transcripts(root, rest)})
+            # `ok` is whether anything came back, not whether the run finished.
+            # It used to be a flat true, so a batch where every single source
+            # failed reported success with a list of failures inside it, and
+            # anything checking only the top line believed it.
+            results = transcripts(root, rest)
+            return emit({"ok": any(r.get("ok") for r in results), "results": results})
         if command == "have":
             return emit({"ok": True, "cached": inventory(root)})
         if command == "forget":

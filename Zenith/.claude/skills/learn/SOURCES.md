@@ -19,6 +19,17 @@ Transcripts land in `.os/transcripts/` with a `[MM:SS]` stamp every half minute.
 Cite where the claim *starts*: sentences run across a stamp, so the line you
 found it on is often its second half.
 
+They are kept, never expire, and are fetched again on demand, so they cost
+nothing to drop: `./os learn --forget <id> …`. `./os tidy` mentions them once
+the pile gets big. Don't tidy them mid-run — a top-up costs nothing only while
+they are still there.
+
+A source that isn't in English still works: the words come back in the language
+it was spoken in, and the result says which. Translate what you quote and say
+that you did. A refusal is a sentence — no captions, unavailable, rate-limited,
+no connection — and they mean different things: only "no captions on this one"
+is a reason to go and find a different source.
+
 ### Triage before you read
 
 Every line starts with its own timestamp, so grep whole lines — a character

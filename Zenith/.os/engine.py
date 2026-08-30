@@ -4563,6 +4563,9 @@ def cmd_learn(os_: Zenith, argv: list[str]) -> int:
         return 0
 
     if forget:
+        if not rest:
+            die("which ones?   ./os learn --cached   lists what is kept"
+                "\n     ./os learn --forget dQw4w9WgXcQ")
         gone = L.forget(os_.root, rest)
         if as_json:
             print(json.dumps({"ok": True, "forgotten": gone}))
@@ -4599,21 +4602,25 @@ def cmd_learn(os_: Zenith, argv: list[str]) -> int:
     except subprocess.TimeoutExpired:
         die("that took too long — try one video at a time")
 
-    if as_json:
-        print(json.dumps({"ok": True, "sources": results}))
-        return 0
+    # Nothing fetched is a failure, and has to be one to whatever is reading:
+    # this said `ok: true` over a list in which every single entry had failed.
     got = [r for r in results if r.get("ok")]
+    if as_json:
+        print(json.dumps({"ok": bool(got), "sources": results}))
+        return 0 if got else 1
     Out.title("learned from", f"{len(got)} of {len(results)}")
     for r in results:
         if r.get("ok"):
             Out.ok(f"{r['id']}  {r['words']:,} words"
                    + ("  (already had it)" if r.get("cached") else ""))
+            if r.get("note"):
+                Out.note(r["note"])
         else:
             Out.warn(f"{r.get('id', r.get('url', '?'))} — {r.get('why')}")
     if got:
         Out.raw()
         Out.note("read them from " + os_.rel(L.cache_dir(os_.root)))
-    return 0
+    return 0 if got else 1
 
 
 def cmd_snag(os_: Zenith, argv: list[str]) -> int:

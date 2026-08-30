@@ -978,14 +978,18 @@ def test_learning_says_what_went_wrong_in_words(t: Case) -> None:
          any(k.startswith("list") for k in run("help")["commands"]),
          "including how to see what a channel has")
 
-    unknown = run("teleport")
+    # A refusal exits non-zero as well as saying so, because a caller reading
+    # only the status and a caller reading only the JSON must not come away
+    # with different stories. This used to be a flat exit 0 for everything.
+    unknown = run("teleport", expect=1)
     t.eq(unknown["ok"], False, "an unknown command is a refusal, not a crash")
     t.ok("teleport" in unknown["why"], "and it says which word it did not know")
 
-    t.eq(run("list")["ok"], False, "asking for a listing with no link is refused")
-    t.eq(run("get")["ok"], False, "and so is asking for a transcript with no link")
+    t.eq(run("list", expect=1)["ok"], False, "asking for a listing with no link is refused")
+    t.eq(run("get", expect=1)["ok"], False, "and so is asking for a transcript with no link")
 
-    bad = run("get", "https://example.com/not-a-video")
+    bad = run("get", "https://example.com/not-a-video", expect=1)
+    t.eq(bad["ok"], False, "a batch where nothing came back does not report success")
     t.eq(bad["results"][0]["ok"], False, "a link that is not a video is reported per link")
     t.ok("video" in bad["results"][0]["why"], "in words a person could act on")
 
@@ -1008,10 +1012,10 @@ def test_a_subject_teaches_the_folder_its_words(t: Case) -> None:
     A subject arrives with vocabulary the folder has never seen — "roas", "ad
     set" — and filing is done by matching words. Learning something and then
     still misfiling every passing note about it is the loop left open."""
-    def run(*args: str) -> dict:
+    def run(*args: str, expect: int = 0) -> dict:
         proc = subprocess.run([sys.executable, ".os/learn.py", "words", *args],
                               cwd=str(t.box.root), capture_output=True, text=True, encoding="utf-8", errors="replace")
-        t.eq(proc.returncode, 0, f"`learn.py words {' '.join(args)}` exits 0")
+        t.eq(proc.returncode, expect, f"`learn.py words {' '.join(args)}` exits {expect}")
         return json.loads(proc.stdout)
 
     listed = run()
@@ -1042,7 +1046,7 @@ def test_a_subject_teaches_the_folder_its_words(t: Case) -> None:
         "zorblat fell off once the quibbing phase reset", "", "")
     t.eq(dom, "marketing", "so a passing thought about it now files itself")
 
-    missing = run("nosuchdomain", "roas")
+    missing = run("nosuchdomain", "roas", expect=1)
     t.eq(missing["ok"], False, "an unknown domain is refused")
     t.ok("marketing" in missing["domains"], "and the real ones are offered back")
 
@@ -1089,7 +1093,8 @@ def test_a_missing_downloader_is_not_a_dead_end(t: Case) -> None:
     proc = subprocess.run(
         [sys.executable, ".os/learn.py", "list", "https://www.youtube.com/@someone"],
         cwd=str(t.box.root), capture_output=True, text=True, encoding="utf-8", errors="replace", env=stripped)
-    t.eq(proc.returncode, 0, "a missing downloader is reported, not raised")
+    t.eq(proc.returncode, 1, "a missing downloader is a refusal, not a raise")
+    t.ok("Traceback" not in proc.stderr, "and never a traceback")
     t.ok("Traceback" not in proc.stderr, "with no traceback")
     payload = json.loads(proc.stdout)
     t.eq(payload["ok"], False, "it says plainly that it could not do it")
@@ -3400,6 +3405,53 @@ def test_check_names_the_part_of_the_vocabulary_it_could_not_read(t: Case) -> No
     finally:
         words.write_text(keep)
         t.box.run("index")
+
+
+@test
+def test_a_refusal_from_the_fetcher_says_which_refusal(t: Case) -> None:
+    """Every failure used to come back as "no captions on this one" — a deleted
+    video, a rate-limit and a dropped connection all said the one thing they
+    were not. Only one of those is a reason to go and find another source, so
+    three times in four the honest response to it was wasted work."""
+    class Said:
+        def __init__(self, err: str, code: int = 1):
+            self.stderr, self.returncode, self.stdout = err, code, ""
+
+    for err, expected in (
+            ("ERROR: [youtube] xx: Video unavailable", "available"),
+            ("ERROR: [youtube] xx: Private video. Sign in if you've been granted access", "private"),
+            ("ERROR: unable to download video subtitles for 'en': HTTP Error 429: Too Many Requests",
+             "rate-limiting"),
+            ("ERROR: [generic] x: Unable to download webpage: Failed to resolve 'nope.invalid'",
+             "connection"),
+            ("ERROR: [youtube] xx: Sign in to confirm your age", "age-restricted")):
+        why = learn.why_empty(Said(err))
+        t.ok(expected in why, f"{expected!r} is said for {err[:44]!r} (got {why!r})")
+        t.ok("Traceback" not in why and len(why) < 160, "in one plain sentence")
+        t.ok("caused by" not in why, "with none of yt-dlp's own plumbing in it")
+
+    t.eq(learn.why_empty(Said("WARNING: [youtube] no supported JavaScript runtime\n"
+                              "ERROR: [youtube] xx: There are no subtitles for the requested languages")),
+         "no captions on this one",
+         "and a video that genuinely has none still says so")
+    t.eq(learn.why_empty(Said("", code=0)), "no captions on this one",
+         "as does one that failed at nothing")
+
+
+@test
+def test_a_source_in_another_language_is_still_a_source(t: Case) -> None:
+    """Asking only for `en.*` meant a video spoken in anything else reported
+    "no captions on this one" while sitting on a full set of them. YouTube
+    always names the spoken track `<lang>-orig`, so one extra pattern reaches
+    it — and never a hundred files."""
+    t.ok("en" in learn.SUB_LANGS and "-orig" in learn.SUB_LANGS,
+         "English first, then whatever it was spoken in")
+    t.eq(learn._track_lang(Path("vid.en.vtt")), "en", "the language comes out of the name")
+    t.eq(learn._track_lang(Path("vid.ja-orig.vtt")), "ja",
+         "and `-orig` is a fact about the track, not the language")
+    ranked = sorted([Path("v.ja-orig.vtt"), Path("v.en.vtt"), Path("v.de.vtt")],
+                    key=learn._track_rank)
+    t.eq(ranked[0].name, "v.en.vtt", "English wins where it is on offer")
 
 
 # ---------------------------------------------------------------------------
