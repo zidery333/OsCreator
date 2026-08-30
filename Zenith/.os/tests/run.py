@@ -2395,6 +2395,43 @@ def test_it_reads_ordinary_english(t: Case) -> None:
         ("note", "Notes on Postgres index types: btree is the default, gin is for arrays"),
         ("note", "Standup notes: blocked on the API key, Sam is chasing it"),
         ("note", "Met with the accountant today. We agreed to switch to quarterly filing."),
+
+        # The admin half of running anything, which is most of what gets typed.
+        # Every one of these was read wrong before the imperative rule existed.
+        ("pushing", "call the accountant about the VAT return"),
+        ("pushing", "kevin from northwind wants the deck by friday"),
+        ("pushing", "AWS bill jumped 40% last month, find out why"),
+        ("pushing", "chase the overdue invoice from acme"),
+        ("pushing", "email the landlord about the lease renewal"),
+        ("pushing", "book the flights for the conference"),
+        ("pushing", "draft the onboarding email sequence"),
+        ("pushing", "renew the domain before it expires"),
+        ("pushing", "reply to the recruiter"),
+        ("pushing", "sort out the broken CI pipeline"),
+        ("pushing", "ask sarah for the updated logo files"),
+        ("pushing", "cancel the old hosting plan"),
+        ("pushing", "look into why churn went up in march"),
+        ("holding", "keep the staging environment matching prod"),
+        ("holding", "keep the tests passing"),
+        ("holding", "stay on top of the support inbox"),
+        ("holding", "maintain the relationship with northwind"),
+        ("holding", "keep the runway above six months"),
+        ("note", "good quote: constraints are what make a thing itself"),
+        ("note", "meta ads: the learning phase needs about 50 conversions"),
+        ("note", "the auth token expires on the 14th"),
+        ("note", "kevin's number is 07700 900123"),
+        ("note", "stripe takes 1.5% plus 20p on UK cards"),
+
+        # And the trap either way: notes that *talk about* doing things. A
+        # bigram like "make a" fires in the middle of ordinary English, which
+        # is how "what make a thing itself" was once filed as a project.
+        ("note", "the trick is to write the hook before the body"),
+        ("note", "how to make a landing page that converts"),
+        ("note", "review: the new macbook is not worth it"),
+        ("note", "what good onboarding looks like, from three teams"),
+        ("note", "he said the deal only works above 40% margin"),
+        ("note", "pricing psychology: anchor high, then remove features"),
+        ("note", "the meeting is on the 14th at 3pm"),
     ]
     classifier = engine.Classifier(engine.Zenith(t.box.root))
     wrong = []

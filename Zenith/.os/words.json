@@ -474,10 +474,6 @@
         "build a",
         "build the",
         "build an",
-        "make a",
-        "make the",
-        "write a",
-        "write the",
         "fix the",
         "fix a",
         "finish the",
@@ -507,7 +503,6 @@
         "plan to",
         "planning to",
         "working on",
-        "before the",
         "by friday",
         "by monday",
         "by tuesday",
@@ -570,7 +565,7 @@
         "\\bby (mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)",
         "\\b(deadline|due)\\b[: ]",
         "\\b(for|by|before|due)\\s+(the\\s+)?\\d{1,2}(st|nd|rd|th)\\b",
-        "^\\s*(build|ship|write|fix|finish|make|launch|redesign|migrate|set up|rewrite)\\b"
+        "(?:^|[,;:—–]\\s*)(build|ship|write|fix|finish|make|launch|redesign|migrate|set up|rewrite|call|ring|email|message|chase|book|send|ask|reply|answer|forward|draft|prepare|update|refresh|rebuild|redo|renew|cancel|refund|reconcile|pay|invoice|bill|schedule|arrange|organise|organize|sort out|follow up|find out|look into|figure out|work out|dig into|sign|submit|apply|register|upload|publish|deploy|release|hire|onboard|interview|clean up|tidy up|move|switch|swap|replace|remove|delete|add)\\s+\\S"
       ]
     },
     "holding": {
@@ -623,11 +618,16 @@
         "no next action",
         "tend to it",
         "keep it green",
-        "hold it at"
+        "hold it at",
+        "keep the",
+        "keep it",
+        "keep everything",
+        "in sync"
       ],
       "patterns": [
         "^#+\\s*(the )?standard\\b",
-        "\\bevery (day|week|month|quarter|morning|friday|monday)\\b"
+        "\\bevery (day|week|month|quarter|morning|friday|monday)\\b",
+        "^\\s*keep\\s+(the|it|them|this|these|us|my|our|everything|everyone)\\b"
       ]
     },
     "note": {
@@ -680,12 +680,20 @@
         "changelog",
         "retro",
         "retrospective",
-        "standup"
+        "standup",
+        "quote:",
+        "he said",
+        "she said",
+        "they said",
+        "someone said",
+        "fyi"
       ],
       "patterns": [
         "^#+\\s*(what|how|why)\\b",
         "https?://",
-        "^#+\\s*\\d{4}-\\d{2}-\\d{2}"
+        "^#+\\s*\\d{4}-\\d{2}-\\d{2}",
+        "^\\s*[\\\"“‘']",
+        "^\\s*(good |great |favourite |favorite )?quote\\b"
       ]
     }
   },

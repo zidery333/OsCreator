@@ -1062,6 +1062,14 @@ CATEGORY_MARKER = ".category"
 #: what a folder *is* has to read them, or it is guessing blind.
 SPINE_NAMES = {"README.md", "index.md", "SKILL.md", "AGENT.md"}
 
+#: Words that carry no complaint. Only used to tell one snag from another.
+STOPWORDS_LITE = {
+    "a", "an", "and", "as", "at", "be", "but", "by", "can", "for", "from", "get",
+    "got", "has", "have", "in", "is", "it", "its", "me", "my", "no", "not", "of",
+    "on", "or", "so", "that", "the", "their", "them", "then", "there", "they",
+    "this", "to", "was", "were", "what", "when", "which", "with", "you", "your",
+}
+
 
 def ignored(path: Path) -> bool:
     name = path.name
@@ -4366,6 +4374,44 @@ def cmd_snag(os_: Zenith, argv: list[str]) -> int:
 
     ranked = sorted(snags, key=lambda x: (-int(x.get("times", 1)), x.get("first", "")))
 
+    def gist(text: str) -> set:
+        """The words that carry the complaint, roughly stemmed.
+
+        `exits` and `exit`, `matches` and `match` — two people describing one
+        problem rarely pick the same tense."""
+        words = re.findall(r"[a-z0-9]+", text.lower())
+        out = set()
+        for w in words:
+            if w in STOPWORDS_LITE:
+                continue      # a bare "1" is the whole point of "exits 1"
+            for end in ("ing", "es", "ed", "s"):
+                if len(w) > 4 and w.endswith(end):
+                    w = w[: -len(end)]
+                    break
+            out.add(w)
+        return out
+
+    def clustered(items: list) -> list:
+        """Same complaint, different wording, side by side.
+
+        Merging these outright would be guessing, and guessing here throws away
+        somebody's report. Putting them next to each other costs nothing and
+        does the same job for whoever reads the page."""
+        groups: list = []
+        for snag in items:
+            mine = gist(snag["text"])
+            for group in groups:
+                shared = mine & group["gist"]
+                if shared and len(shared) / max(1, len(mine | group["gist"])) >= 0.32:
+                    group["with"].append(snag)
+                    group["gist"] |= mine
+                    group["times"] += int(snag.get("times", 1))
+                    break
+            else:
+                groups.append({"head": snag, "with": [], "gist": mine,
+                               "times": int(snag.get("times", 1))})
+        return sorted(groups, key=lambda g: (-g["times"], g["head"].get("first", "")))
+
     if export:
         lines = [f"# What using {os_.config.get('name', 'Zenith')} turned up",
                  "",
@@ -4375,11 +4421,17 @@ def cmd_snag(os_: Zenith, argv: list[str]) -> int:
                  f"on {today()}.", ""]
         if not ranked:
             lines.append("Nothing yet. Either it is working, or nobody is writing it down.")
-        for snag in ranked:
-            times = int(snag.get("times", 1))
+        for group in clustered(ranked):
+            snag = group["head"]
+            times = group["times"]
             when = (f"{snag.get('first')}" if times == 1
                     else f"{times}x, {snag.get('first')} → {snag.get('last')}")
-            lines += [f"## {snag['text']}", "", f"_{when} · engine {snag.get('version', '?')}_", ""]
+            lines += [f"## {snag['text']}", "",
+                      f"_{when} · engine {snag.get('version', '?')}_", ""]
+            if group["with"]:
+                lines.append("Also written as:")
+                lines += [f"- {other['text']}" for other in group["with"]]
+                lines.append("")
         out = os_.root / "template-feedback.md"
         write_text(out, "\n".join(lines).rstrip() + "\n")
         if clear:
