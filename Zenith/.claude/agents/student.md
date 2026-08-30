@@ -2,7 +2,6 @@
 name: student
 description: Goes and studies a subject properly — finds who actually does it for a living, reads or watches them in full, and comes back with the method plus an honest read on who is selling what. Use when the user wants to learn a craft, get good at something, or learn from a specific channel or creator.
 tools: Read, Write, Grep, Glob, Bash, WebSearch, WebFetch
-model: sonnet
 color: cyan
 ---
 

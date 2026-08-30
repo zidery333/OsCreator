@@ -17,33 +17,34 @@ apart and reports back. Pick before writing anything.
 | Runs right here | Would flood this conversation |
 | Needs what's already on screen | Needs its own tools and isolation |
 
-If it must *always* hold no matter what the AI decides, it's neither — it's a hook
-in `.claude/hooks/`. Say so.
+If it must *always* hold no matter what the AI decides, it is neither — it's a
+hook in `.claude/hooks/`. Say so.
 
-## Do this
+## Getting it right
 
-1. **Ask three questions, all at once.** Skip entirely if `$ARGUMENTS` answers them:
-   - What exact words will you say when you want this?
-   - What does finished look like?
-   - What should it never do?
+Three things decide whether it works, and only they need asking about: **what
+exact words they'll say when they want it**, **what finished looks like**, and
+**what it must never do**. Ask them in one message, or skip entirely if
+`$ARGUMENTS` already answers them.
 
-2. **Scaffold it:**
-   ```bash
-   ./os new skill "<Name>"      # or: ./os new agent "<Name>"
-   ```
+```bash
+./os new skill "<Name>"      # or: ./os new agent "<Name>"
+```
 
-3. **Write the body.** Replace the template, don't append to it.
-   - `description:` decides whether it ever runs. Lead with the use case, then
-     the trigger words exactly as a person would say them.
-   - Under 120 lines. Imperative. Say what to do, not why.
-   - Long reference material → a second file in the folder, mentioned in `SKILL.md`
-     so it only loads when needed.
-   - For a helper: name its tools, and say exactly what its final message contains.
-     Nothing else comes back.
+Then replace the template — don't append to it:
 
-4. **Check it:** `./os check`
+- `description:` decides whether it ever runs. Lead with the use case, then the
+  trigger words exactly as a person would say them.
+- Say what the job is and what good looks like. Prescribe the steps only where
+  the order genuinely matters; a capable model reading a clear contract beats one
+  following a brittle script.
+- Long reference material goes in a second file in the folder, mentioned in
+  `SKILL.md` so it only loads when needed.
+- For a helper: name its tools, and say exactly what its final message contains.
+  Nothing else comes back.
 
-5. **Run it once in front of them** on a real case. An untested skill is a guess.
+Check it with `./os check`, then run it once in front of them on a real case. An
+untested skill is a guess.
 
 ## Rules
 
@@ -52,6 +53,7 @@ in `.claude/hooks/`. Say so.
   refuses these outright.
 - Lowercase-with-hyphens. The folder name *is* the command.
 - One skill, one job. If the description needs "and", it's two skills.
+- Under about 120 lines — `./os check` says when it isn't.
 - Never write a skill for something done once. Just save a note.
 
 ## Done when

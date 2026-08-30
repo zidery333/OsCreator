@@ -6,42 +6,40 @@ allowed-tools: Bash(./os:*), Bash(${CLAUDE_PROJECT_DIR}/os:*), Read, Edit, Write
 
 # Wrap up
 
-The session isn't over until the folder knows what happened.
+The session isn't over until the folder knows what happened — **written into the
+thing it happened to**, not into a diary. That is where it is still findable a
+year from now, by the number of the thing itself.
 
-## Do this, in order
+## What goes where
 
-1. **Write down the day, into the work it happened to.** For each piece of work
-   touched, in its `README.md`:
-   - append one dated line to `## Log` — what was worked on, what's blocked and on what
-   - append to `## Decisions` if something was actually decided, and what it rules out
-   - **overwrite** `## Next action` (pushing) or `## Where it stands` (holding)
-   - if it ran out of next actions but isn't over, `./os hold <id>` — that is the
-     honest ending for most sessions, and far more common than closing something
+In each item's `README.md` that today touched:
 
-   Facts only — no summary of the conversation, no adjectives. It goes here and not
-   in a diary because this is where it is still findable a year from now, by the
-   number of the thing itself.
+- one dated line appended to `## Log` — what was worked on, what's blocked and on what
+- anything actually decided appended to `## Decisions`, with what it rules out
+- `## Next action` (pushing) or `## Where it stands` (holding) **overwritten**
+- ran out of next actions but isn't over? `./os hold <id>` — the honest ending for
+  most sessions, and far more common than closing something
 
-2. **Something decided that belongs to no one item?** `./os save "<the decision, and
-   what it rules out>"` — it gets filed as a note with its own number.
+Facts only: no summary of the conversation, no adjectives.
 
-3. **Anything raised but not resolved** → `./os save "<the loose end>"`
+Anything decided that belongs to no one item, and any loose end raised and not
+resolved, goes to `./os save "<the decision, and what it rules out>"` — it gets
+filed as a note with its own number.
 
-4. **Settle it:** `./os sort`. Anything about the folder itself that got in the
-   way today and isn't already written down → `./os snag "<what happened>"`.
+Then settle it: `./os sort`. Anything about the folder itself that got in the way
+today and isn't already written down: `./os snag "<what happened>"`.
 
-5. **Report in four lines or fewer:** what moved, what was decided, what's next,
-   what's still open.
+Report in four lines or fewer: what moved, what was decided, what's next, what's
+still open.
 
 ## Rules
 
 - Never rewrite an old log entry or decision. Append a correction with today's date.
 - Never mark something done that they didn't say was done.
 - A decision with no stated consequence isn't a decision. Write what it rules out.
-- Nothing meaningful happened? Write one line saying so. Don't manufacture progress.
+- Nothing meaningful happened? One line saying so. Don't manufacture progress.
 
 ## Done when
 
-Everything touched has a dated line in its `## Log`, and everything they pushed
-on has a current next action — held work doesn't need one, that's what holding
-means.
+Everything touched has a dated line in its `## Log`, and everything they pushed on
+has a current next action — held work doesn't need one, that's what holding means.

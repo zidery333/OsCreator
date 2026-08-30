@@ -437,10 +437,7 @@
         "system prompt",
         "eval",
         "temperature",
-        "tool use",
-        "opus",
-        "sonnet",
-        "haiku"
+        "tool use"
       ],
       "extensions": []
     }

@@ -6,36 +6,27 @@ allowed-tools: Bash(./os:*), Bash(${CLAUDE_PROJECT_DIR}/os:*), Read
 
 # Catch up
 
-## Where things stand
+Give them what they actually want at 9am: what's moving, what's gone quiet,
+what's waiting, and what's broken — in plain sentences, no tables, no preamble.
 
-!`./os status --no-color 2>&1`
+```bash
+./os status
+./os tidy --json
+```
 
-!`./os tidy --json 2>/dev/null | head -60`
-
-## Do this
-
-Turn that into something a person actually wants at 9am. Plain sentences, no
-tables, no preamble. Four short sections, and skip any that's empty:
-
-**Moving** — projects touched in the last week. One line each: number, name, the
-next action from its README.
-
-**Gone quiet** — open projects nobody's touched in a while. One line each with how
-long. Say plainly if one should just be closed out.
-
-**Waiting** — anything unfiled, and whether it's worth clearing now.
-
-**Broken** — only if something actually is.
-
-Close with one sentence: what you'd do first, and why. Commit to an answer.
+Read the projects' `## Next action` lines for anything you're going to mention by
+name. Say what to do first, and commit to an answer — that last sentence is the
+whole point of the skill.
 
 ## Rules
 
 - Never list everything. More than five in a section? Name three, count the rest.
-- Never pad. Nothing quiet and nothing broken means a three-line answer, and
-  that's the right length.
-- Use numbers so they can act: "open W.04".
-- No jargon and no health score. Say "everything's in good shape."
+- Never pad. Nothing quiet and nothing broken is a three-line answer, and that is
+  the right length.
+- Use the numbers so they can act on it: "open W.04".
+- Say plainly when something should just be held or closed out. Quiet work
+  usually wants `./os hold`, not `./os close`.
+- No jargon and no health score. "Everything's in good shape."
 
 ## Done when
 

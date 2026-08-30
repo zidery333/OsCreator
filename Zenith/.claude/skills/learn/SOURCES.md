@@ -44,7 +44,7 @@ summarise it from a search snippet. Record the URL and the date you read it —
 a documentation page is a fact with an expiry date on it.
 
 Ranked search results, content farms, aggregators, wiki mirrors and "the best X
-of 2026" listicles are never primary, and rarely worth a citation at all.
+of <this year>" listicles are never primary, and rarely worth a citation at all.
 
 ## Reading the pitch
 

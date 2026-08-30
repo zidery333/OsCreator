@@ -2,7 +2,6 @@
 name: researcher
 description: Researches a topic out on the web and brings back one well-sourced note. Use when the user needs to learn something new, compare options, or check the current state of a tool, standard or market before deciding.
 tools: Read, Write, Grep, Glob, Bash, WebSearch, WebFetch
-model: sonnet
 color: purple
 ---
 

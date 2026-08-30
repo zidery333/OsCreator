@@ -2,7 +2,6 @@
 name: builder
 description: Does focused work inside one project — writes the code, drafts, configs and files, and keeps the project README honest as it goes. Use when a project has a clear next action that will take many steps and would otherwise flood the main conversation.
 tools: Read, Write, Edit, Grep, Glob, Bash
-model: sonnet
 color: blue
 ---
 

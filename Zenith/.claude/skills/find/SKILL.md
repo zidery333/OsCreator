@@ -7,29 +7,30 @@ allowed-tools: Bash(./os:*), Bash(${CLAUDE_PROJECT_DIR}/os:*), Read, Grep, Glob
 
 # Find
 
-## Do this
+Answer the question they actually asked, from what is in the folder, in a way
+they can check.
 
-1. Search first — it's ranked and covers everything, archive included:
-   ```bash
-   ./os find "$ARGUMENTS" --limit 15
-   ```
-2. Thin results? Try their synonyms, then `Grep` across `Notes/` and `Work/`
-   for the distinctive words. Don't bother trying spelling
-   variants — `./os find` already handles typos and plurals, and tells you when
-   it searched for something other than what you typed.
-3. Read the top three to five properly. Don't answer from snippets.
-4. Answer the question they actually asked. Then cite **number · name · path**
-   for everything you used.
-5. If the answer changed over time — a decision revised, a plan replaced — say
-   which one is current and when it changed. The `## Decisions` and `## Log`
-   sections inside the item are the authority on that; they are dated and
-   append-only, so the last entry wins.
+```bash
+./os find "$ARGUMENTS" --limit 15
+```
+
+Ranked, covers everything including the archive, and forgives typos and plurals —
+so don't waste turns on spelling variants; it tells you when it searched for
+something other than what you typed. When it comes back thin, their synonyms and
+a `Grep` across `Notes/` and `Work/` for the distinctive words usually find it.
+
+Read the top few properly before answering. Snippets are for ranking, not for
+quoting.
 
 ## Rules
 
-- Never say "I couldn't find anything" until you've tried two phrasings and one `Grep`.
-- Never invent a link between two notes. If they just share a word, say that.
-- If it genuinely isn't there, say so and offer to write the question down.
+- Cite **number · name · path** for everything you used.
+- If the answer changed over time, say which version is current and when it
+  changed. `## Decisions` and `## Log` are dated and append-only, so the last
+  entry wins.
+- Never invent a link between two notes. If they only share a word, say that.
+- Don't say "I couldn't find anything" off one query. When it genuinely isn't
+  there, say so and offer to write the question down.
 - Three or more notes covering the same ground is worth mentioning — they
   probably want them merged.
 
