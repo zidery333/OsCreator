@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
         python: ["3.9", "3.13"]
     steps:
       - uses: actions/checkout@v4
@@ -31,18 +31,16 @@ jobs:
       # people actually type runs, and that a cold checkout reports itself
       # healthy — through the launcher, not around it.
       - name: a cold folder is healthy
-        if: runner.os != 'Windows'
         working-directory: Zenith
         run: |
           ./os check
           ./os save "the boiler service is due in March"
           ./os find boiler
 
-      - name: a cold folder is healthy (windows)
-        if: runner.os == 'Windows'
+      # The folder prints box-drawing characters on every screen. A narrow
+      # locale used to turn that into a traceback on its own heading.
+      - name: and healthy in a terminal that cannot spell
         working-directory: Zenith
-        shell: cmd
-        run: |
-          call os.cmd check || exit /b 1
-          call os.cmd save "the boiler service is due in March" || exit /b 1
-          call os.cmd find boiler || exit /b 1
+        env:
+          PYTHONIOENCODING: ascii
+        run: ./os check

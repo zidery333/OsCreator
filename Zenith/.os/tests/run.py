@@ -44,10 +44,6 @@ def pathlib_stem(name: str) -> str:
 import engine  # noqa: E402
 import learn  # noqa: E402
 
-#: The folder ships two launchers for one program. The suite drives whichever
-#: one this machine would: testing `os` on Windows tests nothing that runs there.
-LAUNCHER = "os.cmd" if sys.platform == "win32" else "os"
-
 VERBOSE = False
 G, R, Y, B, D, X = "\033[38;5;72m", "\033[38;5;167m", "\033[38;5;215m", "\033[1m", "\033[38;5;240m", "\033[0m"
 if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
@@ -57,12 +53,6 @@ if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
 # ---------------------------------------------------------------------------
 # harness
 # ---------------------------------------------------------------------------
-
-class Skipped(Exception):
-    """Not applicable on this machine — POSIX symlinks, or a bash hook on
-    Windows. Counted and named in the report, never quietly passed: a test
-    that silently does nothing is worse than one that is not there."""
-
 
 class Failure(AssertionError):
     pass
@@ -132,7 +122,7 @@ class Sandbox:
     def run(self, *args: str, expect: int | None = 0) -> subprocess.CompletedProcess:
         env = dict(os.environ, ZENITH_HOME=str(self.root), NO_COLOR="1")
         proc = subprocess.run(
-            [str(self.root / LAUNCHER), *args],
+            [str(self.root / "os"), *args],
             capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(self.root), env=env, timeout=180,
         )
         if expect is not None and proc.returncode != expect:
@@ -299,8 +289,6 @@ def test_shipped_extras_are_valid(t: Case) -> None:
 @test
 def test_settings_and_hooks_are_wired(t: Case) -> None:
     """settings.json is valid, points at hooks that exist and behave."""
-    if sys.platform == "win32":
-        raise Skipped("the hooks are bash; Claude Code runs them under WSL/git-bash")
     settings = json.loads((t.box.root / ".claude" / "settings.json").read_text())
     events = settings["hooks"]
     for event in ("SessionStart", "PostToolUse", "Stop"):
@@ -418,15 +406,15 @@ def test_nothing_written_down_goes_unnoticed(t: Case) -> None:
 def test_it_speaks_where_the_console_cannot(t: Case) -> None:
     """A console that cannot spell a box-drawing rule still gets an answer.
 
-    Windows opens in cp1252 as often as not, and every screen this program
-    prints starts with a rule. It died on its own heading — a traceback in
-    place of the answer, before it had said anything at all. Reproduced here
-    on any platform by asking Python for the same narrow encoding."""
+    A narrow locale — `LANG=C`, a stripped container, a cron job — encodes
+    stdout as ASCII, and every screen this program prints starts with a rule.
+    It died on its own heading: a traceback in place of the answer, before it
+    had said anything at all."""
     narrow = dict(os.environ, ZENITH_HOME=str(t.box.root), PYTHONIOENCODING="cp1252")
     for args in (["status"], ["check"], ["save", "the boiler service is due in March"],
                  ["find", "boiler"], ["words"], ["nonsense-command"]):
         proc = subprocess.run(
-            [str(t.box.root / LAUNCHER), *args], capture_output=True, text=True,
+            [str(t.box.root / "os"), *args], capture_output=True, text=True,
             encoding="utf-8", errors="replace", cwd=str(t.box.root), env=narrow,
             timeout=180)
         spoke = proc.stdout + proc.stderr
@@ -917,7 +905,7 @@ def test_a_subject_teaches_the_folder_its_words(t: Case) -> None:
 def test_the_vocabulary_is_a_command_like_any_other(t: Case) -> None:
     """Teaching the folder words has to be reachable without invoking python.
 
-    `python3 .os/learn.py` is not a thing to be typing on Windows, and every
+    `python3 .os/learn.py` is not a thing anybody should have to type, and every
     other capability here is a plain `os` verb. The classifier is only as good
     as the words it has, so this is the one that compounds."""
     listed = t.box.json("words")
@@ -1054,8 +1042,6 @@ def test_sorting_the_same_thing_twice_settles(t: Case) -> None:
     second number on the way. A shortcut hit the same wall for the opposite
     reason — it has no spine on purpose, so its card has to be what says it
     is ours."""
-    if sys.platform == "win32":
-        raise Skipped("planting a symlink on Windows wants Developer Mode")
     notes = t.box.root / "Notes"
     (notes / "no-extension").write_text("# No extension\n\nStill prose, though.\n")
     (notes / "plain.md").write_text("# Plain\n\nReference notes on index types.\n")
@@ -1342,13 +1328,13 @@ def test_the_folder_can_be_renamed_and_moved(t: Case) -> None:
     shutil.move(str(t.box.root), str(moved))
     env = dict(os.environ, NO_COLOR="1")
     env.pop("ZENITH_HOME", None)
-    proc = subprocess.run([str(moved / LAUNCHER), "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+    proc = subprocess.run([str(moved / "os"), "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
                           cwd=str(moved), env=env, timeout=120)
     t.eq(proc.returncode, 0, "the CLI still runs after the folder is renamed")
     t.ok(str(moved) in proc.stdout, "it reports its new location")
 
     deep = moved / "Notes"
-    proc = subprocess.run([str(moved / LAUNCHER), "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+    proc = subprocess.run([str(moved / "os"), "status"], capture_output=True, text=True, encoding="utf-8", errors="replace",
                           cwd=str(deep), env=env, timeout=120)
     t.eq(proc.returncode, 0, "it works from a subdirectory too")
     shutil.move(str(moved), str(t.box.root))
@@ -1423,7 +1409,7 @@ def test_it_repairs_itself_after_a_bad_unzip(t: Case) -> None:
     `./os` then fails with a bare "permission denied" and the hooks die
     silently, which is the worst possible first five seconds. Running it by any
     other route has to put that right permanently."""
-    launcher = t.box.root / LAUNCHER
+    launcher = t.box.root / "os"
     hooks = sorted((t.box.root / ".claude" / "hooks").iterdir())
     for f in [launcher, *hooks]:
         f.chmod(0o644)
@@ -1472,8 +1458,6 @@ def test_a_shortcut_cannot_break_the_folder(t: Case) -> None:
     README.md *through* it, leaving a file the scanner then ignored forever.
     And a link pointing outside the folder crashed every command that rebuilt
     the index, because resolving it produced a path that is not under the root."""
-    if sys.platform == "win32":
-        raise Skipped("planting a symlink on Windows wants Developer Mode")
     inbox = t.box.root / "Notes"
 
     # 1. a link that points back at the folder it lives in
@@ -1516,8 +1500,6 @@ def test_a_shortcut_is_never_walked_through(t: Case) -> None:
     own directory* into this one. A shortcut to a file was read as if it were
     that file, so the item showed up as a duplicate of itself — and the next
     sort would have rewritten the original's front matter through the link."""
-    if sys.platform == "win32":
-        raise Skipped("planting a symlink on Windows wants Developer Mode")
     outside = t.box.tmp / "not-ours"
     (outside / "deep").mkdir(parents=True)
     (outside / ".category").write_text("")                 # looks like a group folder
@@ -1592,8 +1574,6 @@ def test_undo_puts_back_a_shortcut_that_dangles(t: Case) -> None:
     """`exists()` follows a link, so a shortcut whose target is gone reads as
     "not there" — and undo used to leave it behind in whichever bucket the sort
     had put it in, reporting that it could not be put back."""
-    if sys.platform == "win32":
-        raise Skipped("planting a symlink on Windows wants Developer Mode")
     inbox = t.box.root / "Notes"
     (inbox / "old-alias").symlink_to(t.box.tmp / "deleted-long-ago")
     t.ok(not (inbox / "old-alias").exists() and (inbox / "old-alias").is_symlink(),
@@ -2741,16 +2721,27 @@ def test_one_run_at_a_time(t: Case) -> None:
     env = dict(os.environ, ZENITH_HOME=str(t.box.root), NO_COLOR="1")
     for burst in range(4):
         t.box.fill_inbox(16)
-        racers = [subprocess.Popen([str(t.box.root / LAUNCHER), "sort"],
+        racers = [subprocess.Popen([str(t.box.root / "os"), "sort"],
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                   text=True, encoding="utf-8", errors="replace", cwd=str(t.box.root), env=env)
+                                   text=True, encoding="utf-8", errors="replace",
+                                   cwd=str(t.box.root), env=env)
                   for _ in range(6)]
         said = [proc.communicate(timeout=180)[0] for proc in racers]
         for out in said:
             t.ok("Traceback" not in out,
                  f"no run crashes (burst {burst}); one said:\n{out[-600:]}")
-        t.eq(sum("already working here" in out for out in said), len(said) - 1,
-             f"exactly one run works, the rest are told who has the folder (burst {burst})")
+            # Every run did one of two things and nothing else. How *many* were
+            # turned away is the machine's business, not the folder's: on a slow
+            # one all six contend, on a fast one an early winner has finished and
+            # let go before the last starts, and that run is entitled to the
+            # folder. Asserting a count here is asserting the speed of the box.
+            t.ok("already working here" in out or "filed" in out,
+                 f"a run either did the work or was told who has it (burst {burst}); "
+                 f"it said:\n{out[-400:]}")
+        t.eq(t.box.inbox_count(), 0, f"all sixteen were filed (burst {burst})")
+        numbers = [i["id"] for i in t.box.items() if i["id"]]
+        t.eq(len(numbers), len(set(numbers)),
+             f"and no number was handed out twice (burst {burst})")
         t.eq(t.box.inbox_count(), 0, f"and the winner still files everything (burst {burst})")
 
 
@@ -2884,7 +2875,7 @@ def main(argv: list[str]) -> int:
           f"{len(selected)} tests{X}")
     print(f"  {D}{'─' * 64}{X}")
 
-    passed, failed, skipped, checks = 0, [], [], 0
+    passed, failed, checks = 0, [], 0
     started = time.time()
 
     for fn in selected:
@@ -2901,9 +2892,6 @@ def main(argv: list[str]) -> int:
             print(f" {G}pass{X} {D}{case.checks:>4} checks  {time.time()-t0:>5.1f}s{X}")
             if VERBOSE and doc:
                 print(f"      {D}{doc}{X}")
-        except Skipped as why:
-            skipped.append((fn.__name__, str(why)))
-            print(f" {Y}skip{X} {D}{why}{X}")
         except Exception as exc:
             checks += case.checks
             failed.append((fn.__name__, exc, traceback.format_exc()))
@@ -2928,11 +2916,7 @@ def main(argv: list[str]) -> int:
             print()
     verdict = f"{G}{passed}/{len(selected)} passed{X}" if not failed else \
               f"{R}{len(failed)} failed{X}, {passed} passed"
-    if skipped:
-        verdict += f"{D}, {len(skipped)} skipped{X}"
     print(f"  {verdict}  {D}· {checks} assertions · {elapsed:.1f}s{X}")
-    for name, why in skipped:
-        print(f"    {D}skipped {name} — {why}{X}")
     print()
     return 1 if failed else 0
 

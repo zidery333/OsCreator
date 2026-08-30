@@ -8,7 +8,7 @@ You never pick a folder, never name a file, never move anything.
 ## Getting started
 
 Put this folder wherever you keep your stuff. Then open a terminal
-(**Terminal** on a Mac, **PowerShell** on Windows), and point it at the folder:
+(**Terminal** on a Mac), and point it at the folder:
 
 ```bash
 cd path/to/Zenith
@@ -18,18 +18,12 @@ cd path/to/Zenith
 That's a two-minute tour. It cleans up after itself.
 
 > **If it says `permission denied`**, run `bash os demo` once instead — Zenith
-> fixes itself, and `./os` works from then on. (Never happens on Windows.)
+> fixes itself, and `./os` works from then on.
 
 **What's `os`?** The little program in this folder that does the actual work — it
 reads what you write down, decides where it goes, names and numbers it, searches
 it back, and undoes anything it did. When an AI files something for you, it's
 running `os` too.
-
-**And `os.cmd`?** The same thing, for Windows. Your computer uses whichever one it
-understands — you never pick between them. Leave both alone.
-
-> On Windows, drop the `./` — type `os demo`, not `./os demo`. That goes for
-> every command on this page.
 
 ## Using it
 
@@ -129,8 +123,8 @@ so they can't run away: **undo history** and **backups** (`./os backup`).
 ## Moving it, and what it needs
 
 Move it, rename it, put it in Dropbox or git — it finds its own root, so nothing
-breaks. It needs Python 3.9 or newer and nothing else: macOS and most Linux have it,
-Windows gets it from python.org. No packages, no account, no network — bar
+breaks. macOS and Linux, Python 3.9 or newer, and nothing else — every Mac and
+most Linux boxes already have it. No packages, no account, no network — bar
 `./os learn`, which goes to the web and wants `yt-dlp` to hear a video.
 
 ---

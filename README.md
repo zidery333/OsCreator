@@ -18,7 +18,7 @@ cd Zenith
 
 | | |
 | --- | --- |
-| `os` / `os.cmd` | the entry point, macOS/Linux and Windows |
+| `os` | the entry point — one bash script, no arguments needed |
 | `.os/engine.py` | filing, search, undo, index — the whole system |
 | `.os/learn.py` | the one part that goes online: transcripts, and vocabulary |
 | `.os/words.json` | the words it files by. Add yours, or use `./os words` |
@@ -27,8 +27,8 @@ cd Zenith
 | `AGENTS.md` | the rules any AI reads on opening the folder |
 | `.claude/` | skills and helpers for Claude Code — optional, `./os` alone works |
 
-Python 3.9+, standard library only. `yt-dlp` only if you want `./os learn` to
-hear a video. Tested on Linux, macOS and Windows.
+macOS and Linux. Python 3.9+, standard library only. `yt-dlp` only if you want
+`./os learn` to hear a video. Every push is tested on both, on 3.9 and 3.13.
 
 ## Your notes are not in here
 

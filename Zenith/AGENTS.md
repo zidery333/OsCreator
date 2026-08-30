@@ -95,8 +95,6 @@ not where it sits, so a closed `W.04` is still `W.04` in `Archive/`. **Use them.
 ./os help <command>      detail on any of them
 ```
 
-On Windows these are typed `os …` rather than `./os …`. Everything else is identical.
-
 ## Rules that matter
 
 1. **Move files with `./os`, never by hand.** `save`, `new`, `sort`, `done` and

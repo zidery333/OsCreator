@@ -104,11 +104,11 @@ class S:
 def speak_utf8() -> None:
     """Make the output streams carry the characters this program actually prints.
 
-    Windows still opens a console in cp1252, where a single box-drawing rule is
-    an unhandled exception rather than a line — `os status` died on its own
-    heading, before it had said anything. Ask for UTF-8, and fall back to
-    replacing whatever a console genuinely cannot render: a question mark in
-    place of a tick beats a traceback in place of the answer."""
+    A terminal running under `LANG=C`, or any narrow locale, encodes stdout as
+    ASCII — and a single box-drawing rule is then an unhandled exception rather
+    than a line, so `os status` dies on its own heading before saying anything.
+    Ask for UTF-8, and fall back to replacing whatever cannot be rendered: a
+    question mark in place of a tick beats a traceback in place of the answer."""
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -1036,7 +1036,7 @@ IGNORE_NAMES = {
     ".os", ".git", ".DS_Store", ".Trash", "node_modules", "__pycache__",
     ".venv", "venv", ".idea", ".vscode", ".category", ".gitkeep",
     "_index.md", "INDEX.md", "CATALOG.md", "CLAUDE.md", "README.md",
-    "desktop.ini", ".localized", "os", "os.cmd",
+    "desktop.ini", ".localized", "os",
 }
 #: All of these are plain suffixes, so `str.endswith` settles them in one C-level
 #: call. `Path.match` would run five glob compilations per file, and this is asked
@@ -4299,7 +4299,7 @@ def cmd_words(os_: Zenith, argv: list[str]) -> int:
     and it is how `/learn` hands back what a subject taught it. A command
     rather than a skill for the same reason as `learn`: every AI can reach it,
     not only the one holding the skill file — and `python3 .os/learn.py` is not
-    something to be typing on Windows."""
+    something anybody should have to type."""
     sys.path.insert(0, str(os_.root / ".os"))
     was = sys.dont_write_bytecode
     sys.dont_write_bytecode = True
