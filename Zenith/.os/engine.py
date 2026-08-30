@@ -1476,21 +1476,38 @@ class Classifier:
         hay_body = body.lower()
 
         scores: dict[str, float] = {}
+        #: The longest keyword each subject actually matched on. Only ever used
+        #: to break a tie, and a tie is otherwise broken by the alphabet — which
+        #: is deterministic and means nothing. "the poke test sprang back" drew
+        #: 3.0 each between `engineering`, on the word "test", and `personal`,
+        #: on the phrase "poke test" the person had just taught it; engineering
+        #: won for beginning with an e. The longer match is the better evidence:
+        #: a two-word phrase is the subject saying its own name, and a short
+        #: generic word is a coincidence waiting to happen.
+        sharpest: dict[str, int] = {}
         for name, spec in self.tax["domains"].items():
             total = 0.0
+            longest = 0
             for kw, rx in self._words[name]:
+                matched = False
                 if self._hits(hay_title, kw, rx):
                     total += 3.0
+                    matched = True
                 if self._hits(hay_head, kw, rx):
                     total += 1.5
-                total += min(self._hits(hay_body, kw, rx), 6) * 0.6
+                    matched = True
+                in_body = min(self._hits(hay_body, kw, rx), 6)
+                total += in_body * 0.6
+                if matched or in_body:
+                    longest = max(longest, len(kw))
             if suffix and suffix in spec.get("extensions", []):
                 total += 2.5
             if total:
                 scores[name] = round(total, 2)
+                sharpest[name] = longest
         if not scores:
             return "", 0.0, {}
-        best = max(sorted(scores), key=lambda k: scores[k])
+        best = max(sorted(scores), key=lambda k: (scores[k], sharpest[k]))
         return best, scores[best], scores
 
     def score_intent(self, title: str, body: str) -> tuple[str, float, dict]:

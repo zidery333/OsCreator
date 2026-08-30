@@ -3461,6 +3461,29 @@ def test_a_source_in_another_language_is_still_a_source(t: Case) -> None:
 
 
 @test
+def test_a_tie_between_subjects_goes_to_the_longer_word(t: Case) -> None:
+    """A dead heat used to go to whichever subject came first in the alphabet.
+
+    Teaching the folder "poke test" — the whole point of `./os words` — drew
+    3.0 against `engineering`, which owns the word "test", and lost to it for
+    beginning with an e. The longer match is the better evidence: a two-word
+    phrase is a subject saying its own name."""
+    t.box.run("words", "personal", "poke test")
+    box = engine.Zenith(t.box.root)
+    domain, _, scores = engine.Classifier(box).score_domain(
+        "the poke test sprang back too fast this morning", "", "")
+    t.eq(scores.get("personal"), scores.get("engineering"),
+         f"the two really are tied ({scores})")
+    t.eq(domain, "personal", "and the phrase wins over the single generic word")
+
+    # a tie with nothing to separate them still has to land somewhere, and
+    # land in the same place every time
+    twice = [engine.Classifier(engine.Zenith(t.box.root)).score_domain(
+        "the poke test sprang back too fast this morning", "", "")[0] for _ in range(3)]
+    t.eq(set(twice), {"personal"}, "and it is the same answer every time")
+
+
+@test
 def test_a_learning_note_comes_out_in_the_right_shape(t: Case) -> None:
     """`.os/templates/learning.md` was the documented shape of a /learn note and
     nothing could produce it: the only route was an ordinary note with its
