@@ -1,0 +1,39 @@
+# Zenith — what shouldn't be committed
+
+# rebuilt automatically by `./os index`
+.os/registry.json
+.os/cache/
+
+# fetched again on demand, and bigger than everything else here
+.os/transcripts/
+
+# local insurance, not source
+.os/backups/
+
+# transient
+.os/.lock
+.os/.dirty
+*.tmp~
+__pycache__/
+*.pyc
+.DS_Store
+.localized
+
+# ── your folder's contents ──────────────────────────────────────────────────
+# This repository ships the system, not what you keep in it. Everything you
+# write down stays on your disk and goes nowhere. The three .gitkeep files are
+# tracked so a fresh clone still has the folders to put things in.
+#
+# Want your own notes versioned too? Delete this block.
+Work/*
+Notes/*
+Archive/*
+!Work/.gitkeep
+!Notes/.gitkeep
+!Archive/.gitkeep
+
+# rebuilt from whatever is in the folders, so it is only ever your contents
+INDEX.md
+
+# your numbering and your undo history
+.os/state.json

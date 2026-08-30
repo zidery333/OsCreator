@@ -1,0 +1,34 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  suite:
+    name: ${{ matrix.os }} · python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # The suite copies the folder to a throwaway location and works there, so
+      # nothing below touches the checkout.
+      - name: the suite
+        working-directory: Zenith
+        run: python .os/tests/run.py
+
+      # Zenith promises it works with nothing installed. Prove the launcher runs
+      # and the folder reports itself healthy from a cold checkout.
+      - name: a cold folder is healthy
+        working-directory: Zenith
+        run: python .os/engine.py check

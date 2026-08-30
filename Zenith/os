@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Zenith — the one command.
+#   ./os              where everything stands
+#   ./os help         everything you can type
+#
+# Works from anywhere: it finds its own location, so you can symlink this file
+# into ~/bin and still drive the folder it came from.
+set -euo pipefail
+
+# resolve this script through any number of symlinks
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ $src != /* ]] && src="$dir/$src"
+done
+HERE="$(cd -P "$(dirname "$src")" && pwd)"
+
+ENGINE="$HERE/.os/engine.py"
+if [ ! -f "$ENGINE" ]; then
+  printf '\033[38;5;167m  ✖ something is missing: %s\033[0m\n' "$ENGINE" >&2
+  printf '   This file has to sit in the top of a Zenith folder to work.\n' >&2
+  exit 1
+fi
+
+PY="${ZENITH_PYTHON:-}"
+if [ -z "$PY" ]; then
+  for candidate in python3 python3.13 python3.12 python3.11 /usr/bin/python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+  done
+fi
+if [ -z "$PY" ]; then
+  printf '\033[38;5;167m  ✖ Python is not installed\033[0m\n' >&2
+  printf '   Zenith needs Python 3.9 or newer.\n' >&2
+  printf '   On a Mac, run:  xcode-select --install\n' >&2
+  printf '   Otherwise, get it from python.org\n' >&2
+  exit 1
+fi
+
+export ZENITH_HOME="${ZENITH_HOME:-$HERE}"
+exec "$PY" "$ENGINE" "$@"

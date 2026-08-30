@@ -1,0 +1,10 @@
+# Zenith ships two launchers for one program. Each needs its own line endings
+# whatever platform it is checked out on, or it will not run: bash refuses a
+# script with CRLF, and cmd.exe mangles one with LF.
+Zenith/os      text eol=lf
+Zenith/os.cmd  text eol=crlf
+
+*.py   text eol=lf
+*.sh   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
