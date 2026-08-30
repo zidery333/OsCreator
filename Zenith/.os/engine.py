@@ -752,6 +752,94 @@ DEFAULT_BEHAVIOUR = {
 }
 
 
+def settings_like(defaults: dict, given) -> dict:
+    """Settings merged over their defaults, and each one the shape its default is.
+
+    The first pass here made a missing line safe. What it did not make safe was
+    a line somebody *wrote*: `"keep_undo_steps": "lots"` is a perfectly natural
+    thing to type into a settings file, and it took down every command that
+    changed anything — `int()` on it is a traceback, not a message. So the
+    default is the type as well as the value. Anything that will not read as
+    the number its default is falls back to that default, silently, because a
+    number written in words is somebody experimenting and not somebody who
+    needs a lecture. Settings with no default here are none of our business and
+    pass through untouched."""
+    out = dict(defaults)
+    if not isinstance(given, dict):
+        return out
+    for key, value in given.items():
+        want = defaults.get(key)
+        if isinstance(want, bool) or not isinstance(want, (int, float)):
+            out[key] = value
+            continue
+        try:
+            out[key] = type(want)(value)
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+def whole(value, fallback: int) -> int:
+    """A count read out of a file somebody edits by hand."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def clean_words(tax: dict) -> list[str]:
+    """Force `.os/words.json` into the shape everything downstream reads it in.
+
+    This is the one file the person is invited to open, so it is the one most
+    likely to be half-edited — a domain written as a list, one missing its
+    `keywords`, a pattern with an unclosed bracket. Every one of those was a
+    traceback on the next `./os save`, which is the worst possible moment: they
+    are nowhere near the file they just changed. Anything unreadable is dropped
+    from the working copy on disk-read only — the file itself is never
+    rewritten — and returned, so `./os check` can name it."""
+    dropped: list[str] = []
+    for block in ("domains", "intent"):
+        if not isinstance(tax.get(block), dict):
+            if tax.get(block) not in (None, {}):
+                dropped.append(f"`{block}` is not a block of subjects in {{ }}")
+            tax[block] = {}
+    for name, spec in list(tax["domains"].items()):
+        if not isinstance(spec, dict):
+            tax["domains"].pop(name)
+            dropped.append(f"the subject `{name}` is not a block of settings in {{ }}")
+            continue
+        spec["label"] = one_line(spec.get("label") or name)
+        for listing in ("keywords", "learned"):
+            spec[listing] = [one_line(w) for w in spec.get(listing) or []
+                             if isinstance(w, (str, int, float)) and one_line(w)] \
+                if isinstance(spec.get(listing), list) else []
+    for name, spec in list(tax["intent"].items()):
+        if not isinstance(spec, dict):
+            tax["intent"].pop(name)
+            dropped.append(f"the intent `{name}` is not a block of settings in {{ }}")
+            continue
+        spec["keywords"] = [one_line(w) for w in spec.get("keywords") or []
+                            if isinstance(w, (str, int, float))] \
+            if isinstance(spec.get("keywords"), list) else []
+        raw = spec.get("patterns")
+        good = []
+        for pattern in raw if isinstance(raw, list) else []:
+            try:
+                re.compile(str(pattern))
+            except (re.error, TypeError):
+                dropped.append(f"the intent `{name}` has a pattern that is not "
+                               f"a valid one: {pattern!r}")
+                continue
+            good.append(str(pattern))
+        spec["patterns"] = good
+    for listing in ("stopwords", "asset_extensions"):
+        if not isinstance(tax.get(listing), list):
+            if tax.get(listing) is not None:
+                dropped.append(f"`{listing}` is not a list")
+            tax[listing] = []
+    return dropped
+
+
 class Zenith:
     def __init__(self, root: Path):
         self.root = root
@@ -771,23 +859,27 @@ class Zenith:
         if not isinstance(self.taxonomy, dict):
             die(".os/words.json should be a block of settings in { } — restore it "
                 "from a fresh copy of this folder.")
-        self.taxonomy.setdefault("domains", {})
-        self.taxonomy.setdefault("intent", {})
+        self.words_dropped = clean_words(self.taxonomy)
         # A state file edited into something that is not a block of settings is
         # debris rather than state: nothing in it can be read, and refusing to
         # run over it would lock somebody out of their own folder.
         loaded = self._load_json(self.dot / "state.json")
         self.state = loaded if isinstance(loaded, dict) else {}
-        self.state.setdefault("counters", {})
-        self.state.setdefault("undo", [])
-        self.state.setdefault("history", [])
-        self.state.setdefault("created", now_iso())
+        # `setdefault` only fills a key that is *missing*. A state file carrying
+        # `"undo": "yes"` kept the string and crashed the next `./os undo` on
+        # `.pop()`, and `"counters": "x"` crashed the next `./os save` — so what
+        # is checked is the shape, not merely the presence.
+        for key, shape in (("counters", dict), ("undo", list), ("history", list)):
+            if not isinstance(self.state.get(key), shape):
+                self.state[key] = shape()
+        if not isinstance(self.state.get("created"), str):
+            self.state["created"] = now_iso()
         for name, spec in self.config["buckets"].items():
             spec.setdefault("role", "note")
             spec.setdefault("label", name)
             spec.setdefault("blurb", "")
-        self.thresholds = {**DEFAULT_THRESHOLDS, **(self.config.get("thresholds") or {})}
-        self.behaviour = {**DEFAULT_BEHAVIOUR, **(self.config.get("behaviour") or {})}
+        self.thresholds = settings_like(DEFAULT_THRESHOLDS, self.config.get("thresholds"))
+        self.behaviour = settings_like(DEFAULT_BEHAVIOUR, self.config.get("behaviour"))
         self.date_fmt = self.behaviour.get("date_format", "%Y-%m-%d")
         self._pending: list[dict] = []
         self._rel_cache: dict[str, str] = {}
@@ -854,7 +946,10 @@ class Zenith:
             die(f"the {bucket}/ folder has no `code:` in .os/config.json, so it "
                 "cannot hand out numbers")
         counters = self.state.setdefault("counters", {})
-        n = int(counters.get(code, 0)) + 1
+        # A counter hand-edited to a word must not stop somebody numbering
+        # things; starting again from one is recoverable, a traceback is not,
+        # and `reserve_id_at_least` pushes it past whatever is already on disk.
+        n = whole(counters.get(code, 0), 0) + 1
         counters[code] = n
         return f"{code}.{n:02d}"
 
@@ -875,7 +970,7 @@ class Zenith:
                 except ValueError:
                     pass
         counters = self.state.setdefault("counters", {})
-        counters[code] = max(int(counters.get(code, 0)), top)
+        counters[code] = max(whole(counters.get(code, 0), 0), top)
 
     # -- history / undo -----------------------------------------------------
 
@@ -2622,6 +2717,15 @@ class Doctor:
                       ".os/words.json lists no subjects, so nothing can be grouped by "
                       "subject any more", ".os/words.json",
                       "restore it from a fresh copy of this folder")
+
+        # Parts of words.json that could not be read at all. Reading it steps
+        # over them rather than falling over, which is right — but a subject
+        # silently not filing anything is exactly the kind of quiet wrong this
+        # command exists to make loud.
+        for said in self.os.words_dropped:
+            self.flag("warn", "words-unreadable",
+                      f".os/words.json is being read without part of it — {said}",
+                      ".os/words.json", "fix that entry, or delete it")
 
         settings = root / ".claude" / "settings.json"
         if settings.exists():
@@ -4662,6 +4766,25 @@ def cmd_snag(os_: Zenith, argv: list[str]) -> int:
     return 0
 
 
+def _words_or_die(call, *args):
+    """Read or write the vocabulary, and say so plainly when it cannot be read.
+
+    `.os/words.json` is the one file people are invited to open, and learn.py
+    reads it on its own rather than through the engine so that it stays usable
+    without one. That meant it had its own way of failing — an AttributeError
+    about a `str` — for a file somebody had just been told to edit."""
+    try:
+        return call(*args)
+    except json.JSONDecodeError as exc:
+        die(f".os/words.json has a typo in it and can't be read.\n     {exc}\n"
+            "     Usually a missing comma or an unclosed quote.")
+    except ValueError as exc:
+        die(f"{exc}\n     Fix that, or restore the file from a fresh copy of "
+            "this folder.")
+    except OSError as exc:
+        die(f"cannot read .os/words.json: {exc}")
+
+
 def cmd_words(os_: Zenith, argv: list[str]) -> int:
     """The vocabulary this folder files by, and how to add to it.
 
@@ -4684,7 +4807,7 @@ def cmd_words(os_: Zenith, argv: list[str]) -> int:
     rest = _theirs(argv)
 
     if not rest:
-        rows = L.domains(os_.root)
+        rows = _words_or_die(L.domains, os_.root)
         if as_json:
             print(json.dumps({"ok": True, "domains": rows}, indent=2))
             return 0
@@ -4705,7 +4828,7 @@ def cmd_words(os_: Zenith, argv: list[str]) -> int:
             '\n     ./os words marketing "ad set" "learning phase"'
             '\n     ./os words          lists the domains')
 
-    result = L.teach(os_.root, rest[0], rest[1:])
+    result = _words_or_die(L.teach, os_.root, rest[0], rest[1:])
     if as_json:
         print(json.dumps(result, indent=2))
         return 0 if result["ok"] else 1

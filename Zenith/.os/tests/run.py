@@ -3039,9 +3039,78 @@ def test_a_hand_edited_settings_file_never_crashes(t: Case) -> None:
         state.write_text("[1, 2, 3]")
         proc = t.box.run("status")
         t.ok("Traceback" not in proc.stderr, "unreadable state is treated as no state")
+
+        # A setting that is present and is the wrong *type*. The first pass here
+        # made a missing line safe; a line somebody actually wrote was still a
+        # traceback, and it is by far the likelier of the two.
+        data = json.loads(keep[config])
+        data["behaviour"] = {"keep_undo_steps": "lots", "keep_backups": -5}
+        data["thresholds"] = {"category_split": "many", "duplicate_similarity": "high"}
+        config.write_text(json.dumps(data, indent=2))
+        for words_of_command in (("save", "a note about the billing rewrite"),
+                                 ("sort",), ("tidy",), ("check",)):
+            proc = t.box.run(*words_of_command, expect=None)
+            t.ok("Traceback" not in proc.stderr,
+                 f"a setting written in words does not stop `{words_of_command[0]}`")
+        data["thresholds"] = "not even a block"
+        config.write_text(json.dumps(data, indent=2))
+        proc = t.box.run("status")
+        t.ok("Traceback" not in proc.stderr, "nor does a settings block that is a string")
+        config.write_text(keep[config])
+
+        # state.json with every field present and every one the wrong shape
+        state.write_text(json.dumps({"counters": "x", "undo": "y", "history": 3}))
+        for words_of_command in (("status",), ("save", "another billing note"), ("undo",)):
+            proc = t.box.run(*words_of_command, expect=None)
+            t.ok("Traceback" not in proc.stderr,
+                 f"`{words_of_command[0]}` survives state of the wrong shape")
+        state.write_text(keep[state])
+
+        # words.json: the file people are told to open, in every half-edited
+        # shape that used to be an AttributeError on the next save
+        for broken, why in (({"domains": "notadict"}, "domains written as a string"),
+                            ({"domains": {"x": []}}, "a subject written as a list"),
+                            ({"domains": {"x": {"label": "X"}}}, "a subject with no keywords"),
+                            ({"domains": {"x": {"keywords": ["q"]}}}, "a subject with no label"),
+                            ({"domains": {}, "stopwords": "abc"}, "stopwords written as a string"),
+                            ({"domains": {}, "intent": {"o": {"patterns": ["[unclosed"]}}},
+                             "a pattern that will not compile")):
+            words.write_text(json.dumps(broken, indent=2))
+            for verb in ("status", "check", "words", "save"):
+                args = (verb, "a thought about marketing") if verb == "save" else (verb,)
+                proc = t.box.run(*args, expect=None)
+                t.ok("Traceback" not in (proc.stderr + proc.stdout),
+                     f"`{verb}` says something about {why}, rather than raising")
+        words.write_text(keep[words])
     finally:
         for path, text in keep.items():
             path.write_text(text)
+        t.box.run("index")
+
+
+@test
+def test_check_names_the_part_of_the_vocabulary_it_could_not_read(t: Case) -> None:
+    """Reading around a broken entry is right; doing it silently is not.
+
+    A subject that quietly stops matching anything is exactly the kind of wrong
+    `./os check` exists to make loud, and it is invisible everywhere else."""
+    words = t.box.root / ".os" / "words.json"
+    keep = words.read_text()
+    try:
+        data = json.loads(keep)
+        data["domains"]["broken"] = ["not", "a", "block"]
+        data.setdefault("intent", {})["oops"] = {"patterns": ["[unclosed"]}
+        data["stopwords"] = "abc"
+        words.write_text(json.dumps(data, indent=2))
+        report = t.box.json("check", expect=None)
+        said = [i for i in report["issues"] if i["code"] == "words-unreadable"]
+        t.gte(len(said), 3, "every unreadable entry is named")
+        blob = " ".join(i["message"] for i in said)
+        t.ok("broken" in blob, "including which subject")
+        t.ok("oops" in blob, "including which intent")
+        t.ok("stopwords" in blob, "including a list that is not one")
+    finally:
+        words.write_text(keep)
         t.box.run("index")
 
 
@@ -3305,6 +3374,32 @@ def test_the_settling_hook_does_not_drop_what_it_could_not_file(t: Case) -> None
         launcher.chmod(0o755)
         if dirty.exists():
             dirty.unlink()
+
+
+@test
+def test_check_names_the_part_of_the_vocabulary_it_could_not_read(t: Case) -> None:
+    """Reading around a broken entry is right; doing it silently is not.
+
+    A subject that quietly stops matching anything is exactly the kind of wrong
+    `./os check` exists to make loud, and it is invisible everywhere else."""
+    words = t.box.root / ".os" / "words.json"
+    keep = words.read_text()
+    try:
+        data = json.loads(keep)
+        data["domains"]["broken"] = ["not", "a", "block"]
+        data.setdefault("intent", {})["oops"] = {"patterns": ["[unclosed"]}
+        data["stopwords"] = "abc"
+        words.write_text(json.dumps(data, indent=2))
+        report = t.box.json("check", expect=None)
+        said = [i for i in report["issues"] if i["code"] == "words-unreadable"]
+        t.gte(len(said), 3, "every unreadable entry is named")
+        blob = " ".join(i["message"] for i in said)
+        t.ok("broken" in blob, "including which subject")
+        t.ok("oops" in blob, "including which intent")
+        t.ok("stopwords" in blob, "including a list that is not one")
+    finally:
+        words.write_text(keep)
+        t.box.run("index")
 
 
 # ---------------------------------------------------------------------------

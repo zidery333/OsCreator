@@ -251,42 +251,77 @@ def words_path(root: Path) -> Path:
 
 
 def load_words(root: Path) -> dict:
-    return json.loads(words_path(root).read_text(encoding="utf-8"))
+    """`.os/words.json`, checked far enough to be worth walking.
+
+    This is the file the person is told to open, which makes it the one most
+    likely to be half-edited. A `domains` written as a string, or a subject
+    written as a list, is one keystroke away and used to be an AttributeError
+    on the next `./os words` — a traceback about a file they had just been
+    invited to edit. It says what is wrong instead; the shape of each subject
+    is checked where it is read, below."""
+    data = json.loads(words_path(root).read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(".os/words.json should be a block of settings in { }")
+    if not isinstance(data.setdefault("domains", {}), dict):
+        raise ValueError(".os/words.json: `domains` should be a block of "
+                         "subjects in { }")
+    return data
 
 
 def write_words(root: Path, data: dict) -> None:
     """Rewrite words.json, keeping its indentation, its accents and its newline.
 
     Through a temporary file: a half-written taxonomy is worse than an old one,
-    and this is the file the person is invited to edit by hand."""
+    and this is the file the person is invited to edit by hand. The name of that
+    temporary file carries the pid, so two runs writing at once cannot pull it
+    out from under each other, and ends `.tmp~` so that the one time this does
+    die mid-write, what it leaves behind is already ignored by git and by
+    `./os check`."""
     path = words_path(root)
     body = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(body, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp~")
+    try:
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _spec(blocks: dict, name: str) -> dict:
+    """One subject's block, or an empty one if it was written as something else."""
+    spec = blocks.get(name)
+    return spec if isinstance(spec, dict) else {}
+
+
+def _listed(spec: dict, key: str) -> List[str]:
+    raw = spec.get(key)
+    return [str(w) for w in raw] if isinstance(raw, list) else []
 
 
 def domains(root: Path) -> List[dict]:
     """Every domain this folder knows, and how much vocabulary each carries."""
     out = []
-    for name, spec in load_words(root).get("domains", {}).items():
-        out.append({"domain": name, "label": spec.get("label", name),
-                    "keywords": len(spec.get("keywords", [])),
-                    "learned": len(spec.get("learned", []))})
+    blocks = load_words(root)["domains"]
+    for name in blocks:
+        spec = _spec(blocks, name)
+        out.append({"domain": name, "label": str(spec.get("label") or name),
+                    "keywords": len(_listed(spec, "keywords")),
+                    "learned": len(_listed(spec, "learned"))})
     return out
 
 
 def teach(root: Path, domain: str, terms: Iterable[str]) -> dict:
     """Add what a subject taught to one domain's `learned` list."""
     data = load_words(root)
-    blocks = data.get("domains", {})
+    blocks = data["domains"]
     if domain not in blocks:
         return {"ok": False, "why": f"no domain called {domain!r}",
                 "domains": sorted(blocks)}
-    spec = blocks[domain]
+    spec = _spec(blocks, domain)
     # Never say twice what the person already said once, in either list.
-    known = {w.strip().lower() for w in spec.get("keywords", [])}
-    known |= {w.strip().lower() for w in spec.get("learned", [])}
+    known = {w.strip().lower() for w in _listed(spec, "keywords")}
+    known |= {w.strip().lower() for w in _listed(spec, "learned")}
     added: List[str] = []
     already: List[str] = []
     for raw in terms:
@@ -299,12 +334,12 @@ def teach(root: Path, domain: str, terms: Iterable[str]) -> dict:
         known.add(term)
         added.append(term)
     if added:
-        spec["learned"] = list(spec.get("learned", [])) + added
+        spec["learned"] = _listed(spec, "learned") + added
         blocks[domain] = spec
         data["domains"] = blocks
         write_words(root, data)
     return {"ok": True, "domain": domain, "added": added,
-            "already_known": already, "learned_now": len(spec.get("learned", []))}
+            "already_known": already, "learned_now": len(_listed(spec, "learned"))}
 
 
 # ── the command line ─────────────────────────────────────────────────────────
@@ -371,10 +406,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                          "fix": install_hint(),
                          "note": "everything else in this folder works without it"})
         return emit({"ok": False, "why": str(exc)})
-    except (OSError, ValueError) as exc:
-        return emit({"ok": False, "why": f"could not read .os/words.json — {exc}"})
     except subprocess.TimeoutExpired:
         return emit({"ok": False, "why": "that took too long — try one video at a time"})
+    except json.JSONDecodeError as exc:
+        return emit({"ok": False, "why": f".os/words.json has a typo in it — {exc}"})
+    except ValueError as exc:
+        # Raised by `load_words` about a shape, and already a sentence.
+        return emit({"ok": False, "why": str(exc)})
+    except OSError as exc:
+        # Named rather than assumed: this used to blame words.json for every
+        # OSError, including a transcript that could not be written to disk.
+        where = getattr(exc, "filename", "") or "a file it needed"
+        return emit({"ok": False, "why": f"could not read or write {where} — {exc}"})
 
     return emit({"ok": False, "why": f"no such command '{command}'",
                  "try": "python3 .os/learn.py help"})
