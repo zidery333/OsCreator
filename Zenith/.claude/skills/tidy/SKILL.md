@@ -15,6 +15,8 @@ at again. This fixes the second one. Once a week is plenty.
 
 !`./os check --no-color 2>&1 | head -30`
 
+!`./os snag --no-color 2>&1 | head -20`
+
 ## Do this
 
 Work top to bottom. For each thing, **propose the specific action, then take it**
@@ -43,7 +45,10 @@ once they agree. Don't just describe the problem.
    two things sharing a number → keep the older, renumber the newer;
    a skill with no `description:` → write one naming the trigger words;
    a broken link → relink by number, not by path.
-8. **Close:** `./os check --fix`
+8. **Snags** — things the folder itself got wrong, written down as they
+   happened. Not their job to fix: offer `./os snag --export` once, so they have
+   a page to hand to whoever maintains the template. Don't read the list out.
+9. **Close:** `./os check --fix`
 
 ## Rules
 

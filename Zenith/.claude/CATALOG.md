@@ -11,7 +11,7 @@ Type these in the chat, or just ask for them in your own words.
 | --- | --- |
 | `/catchup` | Catch up on everything in this Zenith folder — what's moving, what's gone quiet, what's waiting, what's broken |
 | `/find` | Find and pull together anything in this Zenith folder — notes, projects, decisions, files, past sessions |
-| `/learn` | Learn how good practitioners actually do something, and bring back a note you can work from — including from a video or a whole… |
+| `/learn` | Learn how good practitioners actually do something, and bring back a note you can work from — from the official source and from… |
 | `/make-skill` | Build a new reusable skill or helper for this folder — interview, write, check, register |
 | `/save` | Write something down into this Zenith folder and file it — a thought, a link, a quote, a file, a half-formed idea |
 | `/tidy` | The weekly clean-up pass — stale projects, duplicates, unfiled items, things ready to put away, and anything actually broken |

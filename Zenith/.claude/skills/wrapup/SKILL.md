@@ -27,7 +27,8 @@ The session isn't over until the folder knows what happened.
 
 3. **Anything raised but not resolved** → `./os save "<the loose end>"`
 
-4. **Settle it:** `./os sort`
+4. **Settle it:** `./os sort`. Anything about the folder itself that got in the
+   way today and isn't already written down → `./os snag "<what happened>"`.
 
 5. **Report in four lines or fewer:** what moved, what was decided, what's next,
    what's still open.

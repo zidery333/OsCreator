@@ -1,0 +1,67 @@
+{
+  "counters": {
+    "4": 2,
+    "N": 3
+  },
+  "undo": [
+    {
+      "at": "2026-08-30T00:43:51",
+      "label": "new note N.01 \u2014 How Meta ads are actually run",
+      "steps": [
+        {
+          "action": "create",
+          "src": "Notes/N.01_how-meta-ads-are-actually-run.md",
+          "dst": ""
+        }
+      ],
+      "snapshots": {},
+      "blobs": ""
+    },
+    {
+      "at": "2026-08-30T01:02:47",
+      "label": "sort",
+      "steps": [
+        {
+          "action": "move",
+          "src": ".os/cache/incoming/20260830-000124-blew-up-the-account-on-a-bad-scalp-against-vwap-again.md",
+          "dst": "Notes/N.02_blew-up-the-account-on-a-bad-scalp-against-v.md"
+        }
+      ],
+      "snapshots": {
+        ".os/cache/incoming/20260830-000124-blew-up-the-account-on-a-bad-scalp-against-vwap-again.md": "1465c5ee9d03eb3b74df.bak"
+      },
+      "blobs": "20260830-010247-148838"
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-30T00:01:24",
+      "label": "save",
+      "steps": 1
+    },
+    {
+      "at": "2026-08-30T00:15:08",
+      "label": "new note 4.02 \u2014 How ads are actually done",
+      "steps": 1
+    },
+    {
+      "at": "2026-08-30T00:43:51",
+      "label": "new note N.01 \u2014 How Meta ads are actually run",
+      "steps": 1
+    },
+    {
+      "at": "2026-08-30T01:02:47",
+      "label": "sort",
+      "steps": 1
+    },
+    {
+      "at": "2026-08-30T01:24:32",
+      "label": "save",
+      "steps": 1
+    }
+  ],
+  "fresh": false,
+  "created": "template",
+  "installed": "2026-08-29",
+  "saved": "2026-08-30T02:34:13"
+}

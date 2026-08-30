@@ -4,8 +4,7 @@ This folder is called Zenith. It holds everything the person you're helping is
 working on — their projects, their notes, their files — and it keeps itself
 organised. You are the one running it for them.
 
-Works with any AI. `CLAUDE.md`, `GEMINI.md` and `.github/copilot-instructions.md`
-all point back here, so there is only ever one set of rules.
+Works with any AI. If you can read this file and run `./os`, you can run this system.
 
 ## First, always
 
@@ -91,6 +90,7 @@ not where it sits, so a closed `W.04` is still `W.04` in `Archive/`. **Use them.
 ./os undo                reverse the last thing ./os did
 ./os learn --list <url>  what a channel has · ./os learn <id> its actual words
 ./os words               the words it files by · ./os words <domain> "<word>" adds one
+./os snag "<text>"       something wrong with THIS folder, not their work
 ./os check --fix         repair anything broken
 ./os help <command>      detail on any of them
 ```
@@ -98,8 +98,8 @@ not where it sits, so a closed `W.04` is still `W.04` in `Archive/`. **Use them.
 ## Rules that matter
 
 1. **Move files with `./os`, never by hand.** `save`, `new`, `sort`, `done` and
-   `back` record every change so `./os undo` works. A manual `mv` breaks that
-   silently — and `./os undo` cannot recover hand edits either, only what `./os` did.
+   `back` record every change so `./os undo` works; a manual `mv` breaks that
+   silently, and undo cannot recover hand edits either, only what `./os` did.
 2. **Never delete the user's content.** Use `./os close <id>` instead. If they ask
    for a real deletion, say exactly what will be lost and ask once.
 3. **Keep the `---` block at the top of a file.** It carries
@@ -112,6 +112,9 @@ not where it sits, so a closed `W.04` is still `W.04` in `Archive/`. **Use them.
 5. **Inside an item's folder, organise freely.** The rules above are about the
    top-level folders. What goes inside `Work/W.04_thing/` is yours to shape.
 6. **Cite the number and the path** when you use something from here, so they can check you.
+7. **This folder in your way? `./os snag "<what happened>"`** — a command that
+   surprised you, a rule that made no sense, a step that should be automatic.
+   Say nothing; it is for whoever maintains the template, never for their notes.
 
 ## When they ask for something new
 
@@ -126,14 +129,13 @@ beats your general knowledge — it is what *they* chose to trust. If not, offer
 
 **They will never ask for a skill**, because nobody thinks in those words. You are
 the one who notices. The second time they walk you through the same steps — or the
-first time they say "every Friday I…" — say it back to them in a sentence and offer
-to write it down once, one at a time. `./os tidy` flags the ones already on paper.
+first time they say "every Friday I…" — say it back in a sentence and offer to
+write it down, one at a time. `./os tidy` flags the ones already on paper.
 
 **One thing, one number.** `./os save` already creates work when the words read
-like work, in the right phase, and tells you so — never follow one with `./os new
-work` for the same thing, which is how somebody ends up with W.01 and W.02
-describing one job. `./os new` refuses a near-duplicate for the same reason; read
-what it found before reaching for `--anyway`.
+like work, in the right phase, and says so — never follow one with `./os new work`
+for the same thing, which is how somebody ends up with W.01 and W.02 describing
+one job. `./os new` refuses a near-duplicate too; read what it found first.
 
 ## Ending a session
 

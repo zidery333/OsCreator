@@ -656,7 +656,7 @@ def find_root(start: Path | None = None) -> Path:
             if (candidate / MARKER / "config.json").exists():
                 return candidate
         die(f"{start} is not a Zenith folder, and neither is anything above it.\n"
-            "     --root wants the folder that holds README.md and .os/")
+            "     --root wants the folder that holds AGENTS.md and .os/")
 
     env = os.environ.get("ZENITH_HOME")
     if env and (Path(env).expanduser() / MARKER / "config.json").exists():
@@ -986,15 +986,25 @@ class Lock:
     def __enter__(self) -> "Lock":
         """Claim the lock, or say who has it.
 
-        Checking `exists()` and *then* writing leaves a window: two runs started
-        together both looked, both saw nothing, and both went ahead — after
-        which one of them moved a file the other was midway through moving, and
-        died with a Python traceback instead of the message above. O_EXCL closes
-        that window: the create either wins or fails, with nothing in between."""
+        Checking `exists()` and *then* writing left a window: two runs starting
+        together both looked, both saw nothing, and both went ahead. `O_EXCL`
+        closed that one and opened a narrower one, which took concurrent CI to
+        find: between creating the file and writing into it, the lock exists but
+        is *empty*. A second run read it, could not parse it, correctly
+        concluded that an unreadable lock is debris, deleted it — and took the
+        lock. Both were then inside, and one moved a folder the other was
+        midway through moving.
+
+        So the payload is written first, under a name nobody looks at, and only
+        then made visible in a single atomic step. `os.link` fails if the name
+        is taken, which is the exclusion; and because the content is already
+        there, a lock file that exists is always one somebody can read."""
         payload = json.dumps({"pid": os.getpid(), "at": time.time(), "label": self.label})
+        tmp = self.path.with_name(f".lock.{os.getpid()}")
         for _ in range(2):
             try:
-                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                tmp.write_text(payload, encoding="utf-8")
+                os.link(tmp, self.path)
             except FileExistsError:
                 held = self._holder()
                 if held is not None:
@@ -1007,13 +1017,16 @@ class Lock:
                     pass
                 continue
             except OSError:
-                return self      # an unwritable lock must never block real work
-            try:
-                with os.fdopen(fd, "w") as fh:
-                    fh.write(payload)
-                self.held = True
-            except OSError:
-                pass
+                # A filesystem with no hard links, or one that will not take the
+                # write at all. Neither is a reason to refuse somebody their own
+                # folder: no lock is worse than a lock, and better than a wall.
+                return self
+            finally:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            self.held = True
             return self
         # lost both attempts to a run that keeps replacing the lock
         die("another run is already working here. Wait for it, or remove .os/.lock "
@@ -3388,7 +3401,20 @@ HELP = """
 
   Add --json to most commands for output a script can read.
   Nothing is ever deleted, and every change can be undone with  os undo
+  If the shell says permission denied, run  bash os  once and it fixes itself.
 """
+
+
+def _theirs(argv: list[str]) -> list[str]:
+    """The arguments that are the person's own words, not options.
+
+    Once a command has taken the flags it knows, what is left is theirs — but
+    dropping everything that starts with a dash silently eats `-3 degrees` and
+    `-Xf12o4jt4`. A bare `--` says the rest is content whatever it looks like,
+    which is the only way to name such a thing on a command line."""
+    if "--" in argv:
+        return argv[argv.index("--") + 1:]
+    return [a for a in argv if not a.startswith("-")]
 
 
 def _flag(argv: list[str], *names: str) -> bool:
@@ -4203,13 +4229,7 @@ def cmd_learn(os_: Zenith, argv: list[str]) -> int:
     force = _flag(argv, "--force")
     limit = int(_opt(argv, "--limit", "0") or L.LIST_LIMIT)
     forget = _flag(argv, "--forget")
-    # A YouTube id can begin with a dash, and dropping every dashed argument
-    # made those unfetchable. Anything after a bare `--` is an argument by
-    # definition, which is the only way to name one on a command line.
-    if "--" in argv:
-        rest = argv[argv.index("--") + 1:]
-    else:
-        rest = [a for a in argv if not a.startswith("-")]
+    rest = _theirs(argv)      # a YouTube id can begin with a dash
 
     def no_ytdlp() -> int:
         line = L.install_hint()
@@ -4290,6 +4310,112 @@ def cmd_learn(os_: Zenith, argv: list[str]) -> int:
     return 0
 
 
+def cmd_snag(os_: Zenith, argv: list[str]) -> int:
+    """Write down something wrong with *this folder*, as opposed to their work.
+
+    The person using a template is the only one who finds out what is wrong
+    with it, and they find out mid-sentence, while doing something else —
+    which is exactly when nobody stops to file a bug report. So the AI writes
+    it down as it happens, in one command, and says nothing. Later, `--export`
+    turns the pile into a page that can be handed to whoever maintains the
+    template, with the repeats counted: the same snag hit six times is a
+    different priority from one hit once, and that count is the only piece of
+    evidence a maintainer cannot get any other way.
+
+    Deliberately not a note. Their `Notes/` is theirs; this is about the
+    machinery, it lives in `.os/`, and it never shows up in a search for
+    their own work."""
+    as_json = _flag(argv, "--json")
+    clear = _flag(argv, "--clear")
+    # Clearing always writes them out first. Rule 2 of this folder is that it
+    # does not delete what somebody wrote, and a snag is something they wrote.
+    export = _flag(argv, "--export") or clear
+    text = " ".join(_theirs(argv)).strip().strip('"')
+
+    store = os_.dot / "snags.json"
+    try:
+        snags = json.loads(store.read_text(encoding="utf-8"))
+        if not isinstance(snags, list):
+            snags = []
+    except (OSError, ValueError):
+        snags = []
+
+    def key(t: str) -> str:
+        return re.sub(r"[^a-z0-9 ]+", "", re.sub(r"\s+", " ", t.lower())).strip()
+
+    if text:
+        threshold = float(os_.thresholds.get("duplicate_similarity", 0.86))
+        mine = key(text)
+        for snag in snags:
+            if difflib.SequenceMatcher(None, mine, key(snag["text"])).ratio() >= threshold:
+                snag["times"] = int(snag.get("times", 1)) + 1
+                snag["last"] = today()
+                break
+        else:
+            snags.append({"text": re.sub(r"\s+", " ", text)[:400], "times": 1,
+                          "first": today(), "last": today(),
+                          "version": ENGINE_VERSION})
+        write_text(store, json.dumps(snags, indent=2, ensure_ascii=False) + "\n")
+        if as_json:
+            print(json.dumps({"ok": True, "snags": len(snags)}))
+            return 0
+        # Quiet on purpose: this is bookkeeping about the tool, and the person
+        # was in the middle of something else when it happened.
+        Out.note(f"noted about this folder — {len(snags)} so far, ./os snag to read them")
+        return 0
+
+    ranked = sorted(snags, key=lambda x: (-int(x.get("times", 1)), x.get("first", "")))
+
+    if export:
+        lines = [f"# What using {os_.config.get('name', 'Zenith')} turned up",
+                 "",
+                 f"{len(ranked)} thing{'' if len(ranked) == 1 else 's'}, "
+                 f"most-repeated first, "
+                 f"from engine {ENGINE_VERSION}. Written by `./os snag --export` "
+                 f"on {today()}.", ""]
+        if not ranked:
+            lines.append("Nothing yet. Either it is working, or nobody is writing it down.")
+        for snag in ranked:
+            times = int(snag.get("times", 1))
+            when = (f"{snag.get('first')}" if times == 1
+                    else f"{times}x, {snag.get('first')} → {snag.get('last')}")
+            lines += [f"## {snag['text']}", "", f"_{when} · engine {snag.get('version', '?')}_", ""]
+        out = os_.root / "template-feedback.md"
+        write_text(out, "\n".join(lines).rstrip() + "\n")
+        if clear:
+            write_text(store, "[]\n")     # written out, so safe to put away
+        if as_json:
+            print(json.dumps({"ok": True, "wrote": os_.rel(out),
+                              "snags": len(ranked), "cleared": clear}))
+            return 0
+        Out.title("snags", f"{len(ranked)} written out")
+        Out.ok(os_.rel(out))
+        if clear:
+            Out.note(f"{len(ranked)} cleared — the file above is the record now")
+        Out.raw()
+        Out.note("hand that file to whoever maintains this template")
+        Out.raw()
+        return 0
+
+    if as_json:
+        print(json.dumps({"ok": True, "snags": ranked}, indent=2))
+        return 0
+    if not ranked:
+        Out.title("snags", "nothing yet")
+        Out.note('./os snag "<what got in the way>"   writes one down')
+        Out.raw()
+        return 0
+    Out.title("snags", f"{len(ranked)} about this folder")
+    for snag in ranked:
+        times = int(snag.get("times", 1))
+        Out.item("·", trunc(snag["text"], 62)
+                 + paint(f"   {times}x" if times > 1 else "", S.AMBER))
+    Out.raw()
+    Out.note("./os snag --export   writes them out as a page to hand over")
+    Out.raw()
+    return 0
+
+
 def cmd_words(os_: Zenith, argv: list[str]) -> int:
     """The vocabulary this folder files by, and how to add to it.
 
@@ -4309,7 +4435,7 @@ def cmd_words(os_: Zenith, argv: list[str]) -> int:
         sys.dont_write_bytecode = was
 
     as_json = _flag(argv, "--json")
-    rest = [a for a in argv if a != "--"]
+    rest = _theirs(argv)
 
     if not rest:
         rows = L.domains(os_.root)
@@ -4381,7 +4507,7 @@ def cmd_setup(os_: Zenith, argv: list[str]) -> int:
     """Make a freshly-copied folder belong to whoever just opened it."""
     quiet = _flag(argv, "--quiet-welcome")
     label_opt = _opt(argv, "--name")
-    owner = _opt(argv, "--owner") or " ".join(a for a in argv if not a.startswith("-")).strip()
+    owner = _opt(argv, "--owner") or " ".join(_theirs(argv)).strip()
     with Lock(os_, "setup"):
         result = os_.initialise(owner=owner.strip('"'), name=label_opt)
         Doctor(os_).run(fix=True)
@@ -4596,7 +4722,7 @@ def cmd_completion(os_: Zenith, argv: list[str]) -> int:
 def cmd_name(os_: Zenith, argv: list[str]) -> int:
     """Put your name on the folder, or call the folder something else."""
     label = _opt(argv, "--name")
-    owner = " ".join(a for a in argv if not a.startswith("-")).strip().strip('"')
+    owner = " ".join(_theirs(argv)).strip().strip('"')
     if not owner and not label:
         Out.title("name")
         Out.kv("this folder", os_.config.get("name", "Zenith"), 14)
@@ -4645,6 +4771,21 @@ DETAIL = {
             "— ./os new helper — is for a big job that deserves its own clean "
             "context, like research or a review.) And ./os save already makes "
             "work when your words read like work, so you rarely need this one."),
+    "snag": ('os snag "<what got in the way>"   |   os snag --export',
+             "Write down something wrong with this folder itself — a command that "
+             "did the surprising thing, a rule that made no sense, a step that "
+             "should have been automatic. Not your work: the machinery. Your AI "
+             "writes these as it hits them, so you do not have to notice.",
+             ['os snag "sort filed a photo as a project"',
+              "os snag",
+              "os snag --export"],
+             "--export writes template-feedback.md at the top of this folder, "
+             "most-repeated first, ready to hand to whoever maintains the "
+             "template. The count matters: the same snag six times is a "
+             "different job from one seen once. --clear writes that page first "
+             "and then empties the pile, so nothing you wrote is ever simply "
+             "gone. None of it is mixed in with your own notes, and none of it "
+             "leaves this folder on its own."),
     "words": ('os words   |   os words <domain> "<a word you use>" …',
               "Show the vocabulary this folder files by, and add to it. Where "
               "something lands is decided by matching words, so the fastest way "
@@ -4818,6 +4959,7 @@ COMMANDS = {
     "brief": cmd_brief,
     "learn": cmd_learn,
     "words": cmd_words,
+    "snag": cmd_snag,
     "test": cmd_test, "selftest": cmd_test,
     "completion": cmd_completion,
     "help": cmd_help, "-h": cmd_help, "--help": cmd_help,
@@ -4834,6 +4976,7 @@ NEAR_MISS = {
     "stats": "status", "dash": "status", "dashboard": "status",
     "guide": "help", "manual": "help", "link": "check --fix", "repair": "check --fix",
     "vocab": "words", "vocabulary": "words", "keywords": "words", "taxonomy": "words",
+    "bug": "snag", "issue": "snag", "complain": "snag", "annoying": "snag",
 }
 
 
@@ -4872,6 +5015,7 @@ FLAGS: dict[str, set[str] | None] = {
     "cmd_test": None,      # forwards everything to the suite
     "cmd_undo": set(),
     "cmd_words": {"--json"},
+    "cmd_snag": {"--clear", "--export", "--json"},
 }
 
 #: Commands whose arguments are the person's own words. Told about an option it

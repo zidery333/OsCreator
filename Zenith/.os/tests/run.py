@@ -425,6 +425,105 @@ def test_it_speaks_where_the_console_cannot(t: Case) -> None:
 
 
 @test
+def test_the_folder_records_what_is_wrong_with_itself(t: Case) -> None:
+    """The person using a template is the only one who learns what is wrong
+    with it, and they learn it mid-sentence while doing something else — which
+    is exactly when nobody stops to write a bug report. So the AI writes it,
+    in one command, and the repeats are counted: the same snag six times is a
+    different job from one seen once, and that count is the one piece of
+    evidence whoever maintains the template cannot get any other way."""
+    quiet = t.box.run("snag", "sort filed a photo as a project, not a note")
+    t.ok("noted" in quiet.stdout, "it says one short line and gets out of the way")
+
+    # the same complaint, said the way a person actually says it twice
+    t.box.run("snag", "Sort  filed a photo as a PROJECT, not a note.")
+    t.box.run("snag", "learn should remember the channels I already trust")
+    listed = t.box.json("snag")["snags"]
+    t.eq(len(listed), 2, "near-identical wording is one snag, not two")
+    t.eq(listed[0]["times"], 2, "counted, because how often is the whole point")
+    t.eq(listed[1]["times"], 1, "and a different complaint stays its own")
+    t.ok(listed[0]["first"] and listed[0]["version"],
+         "each carries the date and the engine it happened on")
+
+    # it is about the machinery, so it never turns up in their own work
+    t.box.run("index")
+    t.eq([i for i in t.box.items() if "photo as a project" in (i["title"] or "")], [],
+         "a snag is never filed as one of their notes")
+    # nothing matches, which is the point — `find` exits 1 when it finds nothing
+    hunted = t.box.run("find", "photo", expect=None)
+    t.ok("photo as a project" not in hunted.stdout,
+         "and searching their folder does not surface it")
+
+    out = t.box.json("snag", "--export")
+    page = t.box.root / out["wrote"]
+    t.ok(page.exists(), "--export writes a page they can hand over")
+    text = page.read_text()
+    t.ok(text.index("photo as a project") < text.index("channels I already trust"),
+         "most-repeated first, because that is the order to fix them in")
+    t.ok("2x" in text, "with the count on the page, not just in the store")
+
+    # cleared only once it has been written out, never before
+    t.box.json("snag", "--export", "--clear")
+    t.eq(t.box.json("snag")["snags"], [], "--clear empties the pile")
+    t.ok(page.exists(), "and leaves the exported page behind as the record")
+
+    # a store somebody has hand-edited into nonsense must not kill a command
+    (t.box.root / ".os" / "snags.json").write_text("}{ not json", encoding="utf-8")
+    t.box.run("snag", "and it still takes a new one")
+    t.eq(len(t.box.json("snag")["snags"]), 1, "an unreadable store starts over, quietly")
+
+
+@test
+def test_every_command_the_docs_tell_you_to_type_is_real(t: Case) -> None:
+    """A skill that tells somebody to type a command that does not exist.
+
+    The skills and AGENTS.md are read by an AI that will do what they say, and
+    a wrong flag in one of them is a bug in the folder as surely as a wrong line
+    in the engine — it just fails in somebody's chat instead of in a test. Now
+    it fails here. `os sort --dry` refuses since options are checked, so a stale
+    flag in a skill is a dead end rather than a silent wrong turn; either way it
+    should never have shipped."""
+    root = t.box.root
+    takes = {name: engine.FLAGS.get(fn.__name__, set()) or set()
+             for name, fn in engine.COMMANDS.items() if name}
+    everywhere = {"--json", "--no-color", "--plain", "--quiet", "-q",
+                  "--root", "--version", "-V"}
+
+    def typed(text: str):
+        """Only what a person is being told to type: fences and code spans."""
+        for block in re.findall(r"```[a-z]*\n(.*?)```", text, re.S):
+            for line in block.split("\n"):
+                yield line
+        for span in re.findall(r"`([^`\n]+)`", text):
+            yield span
+
+    docs = (sorted((root / ".claude").rglob("*.md"))
+            + sorted((root / ".os" / "templates").rglob("*.md"))
+            + [root / "AGENTS.md", root / "CLAUDE.md"])
+    t.gte(len(docs), 12, "there are docs to check")
+    wrong = []
+    for doc in docs:
+        text = doc.read_text(encoding="utf-8")
+        for line in typed(text):
+            # `./os              where things stand` is a table, not an argument
+            head = re.split(r"\s{2,}", line.strip())[0]
+            m = re.match(r"\.?/?os\s+([a-z][a-z-]*)\b(.*)", head)
+            if not m:
+                continue
+            name, rest = m.group(1), m.group(2)
+            if name not in takes:
+                wrong.append(f"{doc.name}: `os {name}` is not a command")
+                continue
+            for flag in re.findall(r"(?<!\S)(--?[a-z][\w-]*)", rest):
+                if flag not in takes[name] and flag not in everywhere:
+                    wrong.append(f"{doc.name}: `os {name}` does not take {flag}")
+        for named in re.findall(r"`([\w./-]+\.(?:md|py|json|sh))`", text):
+            if named.startswith((".os/", ".claude/")) and not (root / named).exists():
+                wrong.append(f"{doc.name}: names {named}, which is not there")
+    t.eq(wrong, [], f"every command and file the docs name is real: {wrong[:4]}")
+
+
+@test
 def test_no_option_is_silently_ignored(t: Case) -> None:
     """An option the code does not know stops the run instead of being dropped.
 
@@ -1444,10 +1543,9 @@ def test_it_repairs_itself_after_a_bad_unzip(t: Case) -> None:
     t.ok("os-not-executable" in (t.box.root / ".os" / "engine.py").read_text(),
          "and still reports the case where the bit cannot be restored")
 
-    # and the README tells someone who cannot run anything at all
-    readme = (t.box.root / "README.md").read_text()
-    t.ok("permission denied" in readme and "bash os" in readme,
-         "the README gives a way out that needs no executable bit")
+    # and `os help` tells someone who cannot run anything at all
+    hint = t.box.run("help").stdout
+    t.ok("bash os" in hint, "help gives a way out that needs no executable bit")
 
 
 @test
@@ -2096,7 +2194,6 @@ def test_the_name_is_the_same_everywhere(t: Case) -> None:
 
     # and the name reaches the places a person actually looks
     t.ok(name in t.box.run("help").stdout, "`os help` shows the name")
-    t.ok(name in (t.box.root / "README.md").read_text(), "the README shows the name")
     t.ok(name in (t.box.root / "AGENTS.md").read_text(), "AGENTS.md shows the name")
     t.box.run("index")
     t.ok(name in (t.box.root / "INDEX.md").read_text(), "INDEX.md shows the name")
@@ -2680,9 +2777,6 @@ def test_the_terminal_says_skills_exist(t: Case) -> None:
          "and `os help new` says what a skill actually is, not just its syntax")
     t.ok("helper" in detail, "and points at helpers for the other kind of job")
 
-    readme = (t.box.root / "README.md").read_text()
-    t.ok("./os new skill" in readme, "the README explains it too, not only AGENTS.md")
-
 
 @test
 def test_one_run_at_a_time(t: Case) -> None:
@@ -2771,18 +2865,13 @@ def test_names_in_any_language_survive(t: Case) -> None:
 def test_the_template_is_shippable(t: Case) -> None:
     """The things a stranger downloading this folder needs to find."""
     root = t.box.root
-    for name in ("README.md", "AGENTS.md", "CLAUDE.md", "LICENSE.md", ".gitignore", "os"):
+    for name in ("AGENTS.md", "CLAUDE.md", ".gitignore", "os"):
         t.ok((root / name).exists(), f"{name} ships with the template")
     visible = sorted(p.name for p in root.iterdir() if not p.name.startswith("."))
-    # AGENTS.md and four one-page docs. GEMINI.md is a pointer at AGENTS.md,
-    # not a second set of rules — the whole point is that there is one.
-    t.lte(len([v for v in visible if v.endswith(".md")]), 6,
+    t.lte(len([v for v in visible if v.endswith(".md")]), 4,
           f"the top level stays uncluttered (found {visible})")
-    for pointer in ("CLAUDE.md", "GEMINI.md", ".github/copilot-instructions.md"):
-        t.ok("AGENTS.md" in (root / pointer).read_text(),
-             f"{pointer} points at AGENTS.md rather than repeating it")
-    t.lte(len((root / "README.md").read_text().split("\n")), 140,
-          "the README stays short enough to actually read")
+    t.ok("AGENTS.md" in (root / "CLAUDE.md").read_text(),
+         "CLAUDE.md points at AGENTS.md rather than repeating it")
     t.ok(os.access(root / "os", os.X_OK), "./os is executable")
 
     settings = json.loads((root / ".claude" / "settings.json").read_text())

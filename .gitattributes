@@ -1,8 +1,0 @@
-# Zenith's launcher is a bash script. It has to keep LF endings whatever a
-# checkout's platform defaults to, or bash refuses to run it.
-Zenith/os text eol=lf
-
-*.py   text eol=lf
-*.sh   text eol=lf
-*.md   text eol=lf
-*.json text eol=lf

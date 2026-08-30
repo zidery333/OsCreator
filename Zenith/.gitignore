@@ -19,21 +19,5 @@ __pycache__/
 .DS_Store
 .localized
 
-# ── your folder's contents ──────────────────────────────────────────────────
-# This repository ships the system, not what you keep in it. Everything you
-# write down stays on your disk and goes nowhere. The three .gitkeep files are
-# tracked so a fresh clone still has the folders to put things in.
-#
-# Want your own notes versioned too? Delete this block.
-Work/*
-Notes/*
-Archive/*
-!Work/.gitkeep
-!Notes/.gitkeep
-!Archive/.gitkeep
-
-# rebuilt from whatever is in the folders, so it is only ever your contents
+# rebuilt automatically, so it is never worth a commit
 INDEX.md
-
-# your numbering and your undo history
-.os/state.json
