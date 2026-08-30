@@ -3461,6 +3461,36 @@ def test_a_source_in_another_language_is_still_a_source(t: Case) -> None:
 
 
 @test
+def test_a_phrase_is_found_however_its_words_are_joined(t: Case) -> None:
+    """The title is worth 3.0 and a mention in the body 0.6 — and for anything
+    dropped in or captured, the title *is* the filename, hyphens and all.
+
+    A phrase written with a space could never match one, so every multi-word
+    term in words.json was invisible in the one place that counted most. That
+    is most of what a subject ever teaches the folder: "ad set", "learning
+    phase", "cash flow" — not nouns."""
+    match = engine.Classifier._matcher
+    rx = match("poke test")
+    for joined in ("the poke test sprang", "a poke-test sprang", "poke_test today"):
+        t.ok(rx.findall(joined), f"{joined!r} is the same phrase")
+    t.eq(rx.findall("pokes test"), [], "but a longer word is still not a match")
+
+    t.eq(match("ci").findall("pricing broke"), [],
+         "and a short word still does not fire inside another one")
+
+    # the whole point, through the real command
+    t.box.run("words", "personal", "poke test")
+    box = engine.Zenith(t.box.root)
+    _, score, _ = engine.Classifier(box).score_domain("poke-test-sprang-back", "", "")
+    t.gte(score, 3.0, "a phrase in a hyphenated filename scores like a title")
+
+    # and one term written two ways is still one term, not two
+    both = engine.Classifier._terms(["to-do", "to do", "to  do", "roas"])
+    t.eq([kw for kw, _ in both], ["to-do", "roas"],
+         "so 'Nothing to do' cannot score the same term twice")
+
+
+@test
 def test_a_tie_between_subjects_goes_to_the_longer_word(t: Case) -> None:
     """A dead heat used to go to whichever subject came first in the alphabet.
 

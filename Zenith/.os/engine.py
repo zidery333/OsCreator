@@ -1413,26 +1413,56 @@ class Classifier:
         # folder, kept separate so it stays obvious which words came from where
         # — but scored identically, because a word only helps if it counts.
         self._words = {
-            name: [(kw.lower(), self._matcher(kw))
-                   for kw in list(spec["keywords"]) + list(spec.get("learned", []))]
+            name: self._terms(list(spec["keywords"]) + list(spec.get("learned", [])))
             for name, spec in self.tax["domains"].items()
         }
         self._intent_words = {
-            name: [(kw.lower(), self._matcher(kw)) for kw in spec.get("keywords", [])]
+            name: self._terms(spec.get("keywords", []))
             for name, spec in self.tax.get("intent", {}).items()
         }
 
+    @classmethod
+    def _terms(cls, keywords: list) -> list:
+        """One entry per *term*, however many ways it happens to be spelled.
+
+        A list holding both "to-do" and "to do" once held two terms, because
+        the hyphen and the space matched different text. They match the same
+        text now, so "Nothing to do" scored the same term twice and doubled a
+        subject's score against a note that was only mentioning it."""
+        out, seen = [], set()
+        for kw in keywords:
+            key = re.sub(r"[^a-z0-9]+", " ", str(kw).lower()).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append((str(kw).lower(), cls._matcher(kw)))
+        return out
+
     @staticmethod
     def _matcher(keyword: str):
-        """A keyword must match a whole word, not a fragment.
+        """A keyword must match a whole word, not a fragment — and a phrase must
+        match however the words in it happen to be joined.
 
-        Without this, "ci" fires inside "pricing" and "ad" inside "already",
-        and short keywords quietly poison every score. Phrases and keywords
-        carrying punctuation are matched literally, since they cannot collide."""
+        Without the first part, "ci" fires inside "pricing" and "ad" inside
+        "already", and short keywords quietly poison every score. Keywords
+        carrying punctuation are matched literally, since they cannot collide.
+
+        The second part took a real filing to find. The heaviest signal by far
+        is the title, worth 3.0 against 0.6 for a mention in the body — and for
+        anything dropped in or captured, the title *is* the filename, hyphens
+        and all. A phrase written with a space could never match one, so
+        "poke test" scored nothing against `poke-test-sprang-back.md` while the
+        single generic word "test" scored 3.0 for another subject entirely.
+        Every multi-word term in `words.json` was invisible in the one place it
+        counted most, which is most of what `./os words` is ever taught: a
+        subject arrives carrying "ad set" and "learning phase", not nouns."""
         k = keyword.lower()
         if not re.fullmatch(r"[a-z0-9]+(?:[ -][a-z0-9]+)*", k):
             return None
-        return re.compile(r"(?<![a-z0-9])" + re.escape(k) + r"(?![a-z0-9])")
+        # A short run, not any run: "ad set" is one term where the words are
+        # adjacent, and should not be found either side of a full paragraph.
+        joined = r"[^a-z0-9]{1,3}".join(re.escape(w) for w in re.split(r"[ -]+", k))
+        return re.compile(r"(?<![a-z0-9])" + joined + r"(?![a-z0-9])")
 
     @staticmethod
     def _hits(hay: str, kw: str, rx) -> int:
