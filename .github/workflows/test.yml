@@ -27,8 +27,22 @@ jobs:
         working-directory: Zenith
         run: python .os/tests/run.py
 
-      # Zenith promises it works with nothing installed. Prove the launcher runs
-      # and the folder reports itself healthy from a cold checkout.
+      # Zenith promises it works with nothing installed. Prove the launcher
+      # people actually type runs, and that a cold checkout reports itself
+      # healthy — through the launcher, not around it.
       - name: a cold folder is healthy
+        if: runner.os != 'Windows'
         working-directory: Zenith
-        run: python .os/engine.py check
+        run: |
+          ./os check
+          ./os save "the boiler service is due in March"
+          ./os find boiler
+
+      - name: a cold folder is healthy (windows)
+        if: runner.os == 'Windows'
+        working-directory: Zenith
+        shell: cmd
+        run: |
+          call os.cmd check || exit /b 1
+          call os.cmd save "the boiler service is due in March" || exit /b 1
+          call os.cmd find boiler || exit /b 1

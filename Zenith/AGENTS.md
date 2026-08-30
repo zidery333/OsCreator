@@ -4,12 +4,13 @@ This folder is called Zenith. It holds everything the person you're helping is
 working on — their projects, their notes, their files — and it keeps itself
 organised. You are the one running it for them.
 
-Works with any AI. If you can read this file and run `./os`, you can run this system.
+Works with any AI. `CLAUDE.md`, `GEMINI.md` and `.github/copilot-instructions.md`
+all point back here, so there is only ever one set of rules.
 
 ## First, always
 
-Run `./os` before you do anything else. It tells you what's open, what's waiting,
-and what's gone stale. Open with one plain sentence about where things stand.
+Run `./os` before anything else. It says what's open, what's waiting and what has
+gone stale. Open with one plain sentence about where things stand.
 
 **If the folders are empty, this person has never used it.** Don't explain the
 system and don't list commands. Say hello, tell them in a line or two that
@@ -35,12 +36,11 @@ The user did not sign up to learn a filing system. They shouldn't have to.
 | `Notes/` | Anything to look up later, files included | You'll come back to it |
 | `Archive/` | No longer live, still searchable | They stopped carrying it |
 
-Three folders, and the person never picks one — `./os save` decides, and files it
-immediately. **There is no inbox**, so nothing is ever left waiting: if you saved
-it, it is filed. A PDF or an image is a thing you look up later, so it lands in
-`Notes/` alongside prose, with a `<name>.card.md` beside it carrying its number,
-subject and tags. Move the two together or search stops finding the file; `./os`
-already does.
+Three folders, and the person never picks one — `./os save` decides and files it
+immediately. **There is no inbox**: if you saved it, it is filed. A PDF or an
+image is a thing you look up later, so it lands in `Notes/` alongside prose, with
+a `<name>.card.md` beside it carrying its number, subject and tags. Move the two
+together or search stops finding the file; `./os` already does.
 
 If they drop files into a folder by hand, `./os sort` adopts them where they lie
 — works out what each is, gives it a number and a header. Until then they have no

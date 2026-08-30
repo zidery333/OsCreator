@@ -101,6 +101,21 @@ class S:
                     setattr(cls, k, "")
 
 
+def speak_utf8() -> None:
+    """Make the output streams carry the characters this program actually prints.
+
+    Windows still opens a console in cp1252, where a single box-drawing rule is
+    an unhandled exception rather than a line — `os status` died on its own
+    heading, before it had said anything. Ask for UTF-8, and fall back to
+    replacing whatever a console genuinely cannot render: a question mark in
+    place of a tick beats a traceback in place of the answer."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def paint(text: str, *styles: str) -> str:
     if not S.enabled or not styles:
         return text
@@ -4888,6 +4903,8 @@ def _stray_options(argv: list[str], known: set[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Before anything is printed, including the errors below.
+    speak_utf8()
     argv = list(sys.argv[1:] if argv is None else argv)
     if _flag(argv, "--version", "-V"):
         print(f"Zenith {ENGINE_VERSION}")

@@ -13,6 +13,12 @@ if not exist "%HERE%.os\engine.py" (
 
 set "ZENITH_HOME=%HERE%"
 
+REM The console still opens in cp1252 on plenty of Windows machines, where a
+REM box-drawing rule is an exception rather than a line. The engine reconfigures
+REM its own streams; this covers anything it starts in turn.
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
 where py >nul 2>&1 && goto :usepy
 where python3 >nul 2>&1 && goto :usepython3
 where python >nul 2>&1 && goto :usepython

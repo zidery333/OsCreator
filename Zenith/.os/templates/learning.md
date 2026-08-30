@@ -43,9 +43,10 @@ source:
 <!-- One thing, finishable today, with a pass condition. -->
 
 ## Sources
-<!-- Each: who they are, what they sell and at what timestamp, the date, and
-     the timestamps the method came from. Say which ones you rejected and why —
-     that is as useful as the ones you kept. -->
+<!-- The official one first, if there is one: what it is, its URL, the date you
+     read it. Then each practitioner: who they are, what they sell and at what
+     timestamp, the date, and the timestamps the method came from. Say which
+     ones you rejected and why — that is as useful as the ones you kept. -->
 
 ## Related
 <!-- Other things here, by number: N.02, W.04. What step 1 turned up goes here. -->

@@ -13,25 +13,23 @@ You write nothing into the folder — you return a draft and let `/learn` file i
 
 1. **Look inside first.** `./os find "<subject>"`. Build on what's there.
 
-2. **Find who actually does this.** Given a channel, that channel is the spine —
-   they were chosen for a reason. Otherwise search for practitioners, not
+2. **Get the official source first.** Whoever defines the thing — its own
+   documentation, the standard, the originator's site or book. Definitions,
+   numbers and current behaviour come from there, and from nowhere else. Reach
+   it through the thing's own channel, repo or profile rather than a search
+   ranking. No official source is a fine answer; say so rather than promoting a
+   blog in its place.
+
+3. **Then find who actually does this.** Given a channel, that channel is the
+   spine — it was chosen for a reason. Otherwise look for practitioners, not
    explainers: people whose income comes from *doing* the thing, whose work you
    can point at.
 
-3. **List before you fetch.** `./os learn --list --json "<channel>"` gives every
-   video with views, date and length for free. No channel, just a subject? Use
-   `--list --json "ytsearch12:<subject>"` — it searches YouTube directly. Read
-   the titles against the subject and pick; never take the top by views, which
-   predict nothing in either direction.
-
-4. **Get the actual words.**
-   ```bash
-   ./os learn --json "<url>" "<url>" "<url>"
-   ```
-   Cached ones come back instantly, so a top-up costs nothing. Read the
-   transcripts from `.os/transcripts/`. If yt-dlp is missing, the command says
-   so with the one line to install it — pass that on rather than guessing at a
-   video from its description.
+4. **Read the words, not the page.** `.claude/skills/learn/SOURCES.md` has the
+   commands for listing a channel, searching YouTube directly, pulling
+   transcripts and triaging them into a read order. Follow it. Where the
+   official source and a practitioner disagree, the official one is right about
+   what is true and the practitioner about what is done — record both.
 
 5. **Stop when you stop learning.** Two sources in a row that add no new step,
    judgement call or mistake, and you're done — but read at least four first.
@@ -50,7 +48,8 @@ You write nothing into the folder — you return a draft and let `/learn` file i
 Everything below, in your final message. Nothing on disk but the cache.
 
 - **Who's selling what** — one line per source: who they are, what they've done,
-  what they're selling, date.
+  what they're selling, date. Name the official source separately, with its URL
+  and the date you read it.
 - **Agree or disagree** — do these sources teach one method or rival ones? Say
   which, because it decides whether this becomes a note or a folder.
 - **The subject's own vocabulary** — eight to fifteen terms this craft uses that
@@ -89,8 +88,9 @@ then the split.>
 <One exercise, finishable today, with a pass condition.>
 
 ## Sources
-<Each: who, what they sell and at what timestamp, date, and the timestamps the
-method came from. Say which you rejected and why.>
+<The official one first: what it is, its URL, the date you read it. Then each
+practitioner: who, what they sell and at what timestamp, date, and the
+timestamps the method came from. Say which you rejected and why.>
 ```
 
 ## Never
