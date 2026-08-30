@@ -372,11 +372,26 @@ def read_text(path: Path, limit: int = 400_000) -> str:
 
 
 def write_text(path: Path, text: str) -> None:
-    """Atomic write: temp file in the same directory, then replace."""
+    """Atomic write: temp file in the same directory, then replace.
+
+    The temp name carries the pid because the folder is not single-threaded.
+    `settle.sh` rebuilds the index in the background while the chat may be
+    running `./os save` in the foreground, and both end up writing
+    registry.json. Sharing one temp name, the first to finish replaced it out
+    from under the second — which then died on `os.replace` with a
+    FileNotFoundError traceback, on a file it had written correctly. A name per
+    process makes each writer's temp its own, so the replace always lands and
+    the loser simply gets overwritten by a whole file rather than half of one."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp~")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp~")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 def human_size(n: float) -> str:
@@ -891,6 +906,12 @@ class Zenith:
         except OSError:
             return
         for f in targets[:cap_files]:
+            # A symlink's content belongs to whatever it points at, which may be
+            # /etc/hosts and is certainly not ours to put back. Undoing a sort
+            # that had adopted one said "couldn't put this one back: permission
+            # denied" about a link it had in fact restored perfectly.
+            if f.is_symlink():
+                continue
             if f.suffix.lower() not in TEXT_SUFFIXES or self.rel(f) in self._snapshots:
                 continue
             try:
@@ -1041,9 +1062,13 @@ class Lock:
 
     STALE_AFTER = 900   # seconds; a lock older than this belonged to a dead run
 
-    def __init__(self, os_: "Zenith", label: str):
+    def __init__(self, os_: "Zenith", label: str, safe: str = ""):
         self.path = os_.dot / ".lock"
         self.label = label
+        # What is already on disk and cannot be lost, if this one is turned
+        # away. Being told the folder is busy reads like "your words are gone"
+        # unless somebody says otherwise, and by this point they never are.
+        self.safe = safe
         self.held = False
 
     @staticmethod
@@ -1097,7 +1122,8 @@ class Lock:
                 if held is not None:
                     die(f"another run is already working here "
                         f"('{held.get('label', '?')}', pid {held.get('pid')}). "
-                        "Wait for it, or remove .os/.lock if it is dead.")
+                        "Wait for it, or remove .os/.lock if it is dead."
+                        + (f"\n     {self.safe}" if self.safe else ""))
                 try:
                     self.path.unlink()   # debris from a run that is long gone
                 except OSError:
@@ -1117,7 +1143,7 @@ class Lock:
             return self
         # lost both attempts to a run that keeps replacing the lock
         die("another run is already working here. Wait for it, or remove .os/.lock "
-            "if it is dead.")
+            "if it is dead." + (f"\n     {self.safe}" if self.safe else ""))
 
     def __exit__(self, *exc) -> bool:
         if self.held:
@@ -3827,11 +3853,18 @@ def cmd_save(os_: Zenith, argv: list[str]) -> int:
             except (OSError, KeyboardInterrupt):
                 text = ""
         if not re.search(r"[^\W_]", text, re.UNICODE):
-            die('tell me what to save:   ./os save "the thing on your mind"')
+            # Emoji and punctuation are `\W`, so "🎉🎉🎉" and "..." land here
+            # too — and being told "tell me what to save" when you plainly did
+            # reads as the folder not listening. Say which of the two it was.
+            die(('there are no words in that to file it by:   '
+                 './os save "the thing on your mind"') if text.strip() else
+                'tell me what to save:   ./os save "the thing on your mind"')
         landed = Creator(os_).capture(text)
         what = re.sub(r"\s+", " ", text.strip().split("\n")[0])[:64]
 
-    with Lock(os_, "save"):
+    # By here the words are already on disk, whether or not the lock is free.
+    with Lock(os_, "save", safe="what you typed is safe in "
+              + os_.rel(landed) + " — ./os sort files it when the other run is done"):
         dest, verdict = Sorter(os_).file_one(landed)
         os_.commit("save")
         Indexer(os_).build()

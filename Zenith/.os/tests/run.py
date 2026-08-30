@@ -2255,9 +2255,16 @@ def test_it_survives_being_used_wrongly(t: Case) -> None:
     """Every one of these was a real bug found by trying to break it."""
     # `Path("")` is the current directory: an empty argument once tried to copy
     # the whole folder into its own inbox, and hung
-    for junk in ("", "     ", ".", "...!!!"):
+    # Nothing typed and nothing *filable* typed are different mistakes, and
+    # answering "tell me what to save" to somebody who plainly did reads as
+    # the folder not listening. Emoji count as punctuation here.
+    for junk in ("", "     "):
         proc = t.box.run("save", junk, expect=1)
         t.ok("tell me what to save" in proc.stderr, f"`save {junk!r}` is refused, kindly")
+    for wordless in (".", "...!!!", "\U0001f389\U0001f389"):
+        proc = t.box.run("save", wordless, expect=1)
+        t.ok("no words in that" in proc.stderr,
+             f"`save {wordless!r}` says which of the two it was")
     t.eq(t.box.inbox_count(), 0, "nothing junk reached the inbox")
 
     # a path that is not there must not be filed as if it were prose
@@ -3181,6 +3188,123 @@ def test_the_index_survives_a_filename_written_across_two_lines(t: Case) -> None
         t.eq(row.count("|") - row.count("\\|"), 5,
              f"every item row still has its four columns: {row[:90]!r}")
     t.ok(any("%0A" in row for row in items), "and the awkward name is still linked")
+
+
+@test
+def test_two_runs_writing_at_once_do_not_crash_each_other(t: Case) -> None:
+    """`settle.sh` rebuilds the index in the background while the chat may be
+    running `./os save` in front of it, and both write registry.json.
+
+    Sharing one temp name, the first to finish replaced it out from under the
+    second, which then died on `os.replace` with a FileNotFoundError — about a
+    file it had itself written correctly."""
+    target = t.box.root / ".os" / "cache" / "contended.json"
+    payloads = [json.dumps({"who": who, "pad": [who] * 400}) for who in ("a", "b", "c", "d")]
+    script = (
+        "import json,sys\n"
+        "sys.dont_write_bytecode = True\n"
+        f"sys.path.insert(0, {str(SOURCE / '.os')!r})\n"
+        "import engine\n"
+        "from pathlib import Path\n"
+        "for _ in range(150):\n"
+        f"    engine.write_text(Path({str(target)!r}), sys.argv[1])\n")
+    runners = [subprocess.Popen([sys.executable, "-c", script, body],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+               for body in payloads]
+    torn = 0
+    for _ in range(400):
+        try:
+            json.loads(target.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (ValueError, OSError):
+            torn += 1
+    for runner in runners:
+        _, err = runner.communicate(timeout=120)
+        t.eq(runner.returncode, 0, f"a writer that lost the race still finished:\n{err[-400:]}")
+        t.ok("Traceback" not in err, "and never with a traceback")
+    t.eq(torn, 0, "and nobody ever read half a file")
+    t.eq(list((t.box.root / ".os" / "cache").glob("*.tmp~")), [],
+         "no temp file is left behind")
+
+
+@test
+def test_undoing_a_sort_does_not_claim_a_link_was_lost(t: Case) -> None:
+    """Snapshots used to read and write *through* a symlink, so undoing a sort
+    that had adopted one reported a permission error about /etc — on a link it
+    had in fact put back perfectly."""
+    link = t.box.root / "Notes" / "pointer.md"
+    try:
+        link.symlink_to(Path("/etc/hosts"))
+    except OSError:
+        return
+    t.box.run("sort")
+    proc = t.box.run("undo")
+    t.ok("couldn't put this one back" not in proc.stdout,
+         f"undo does not report a failure it did not have:\n{proc.stdout[-400:]}")
+    t.ok(link.is_symlink(), "and the link is back where it was")
+    link.unlink()
+    t.box.run("index")
+
+
+@test
+def test_a_busy_folder_says_the_words_are_not_lost(t: Case) -> None:
+    """`./os save` writes what was typed down *before* it takes the lock, so a
+    run turned away has already kept it. Being told only that the folder is
+    busy reads as "your words are gone", and they never are."""
+    lock = t.box.root / ".os" / ".lock"
+    holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        lock.write_text(json.dumps({"pid": holder.pid, "at": time.time(), "label": "sort"}))
+        proc = t.box.run("save", "Chase the Northwind contract before Friday", expect=1)
+        t.ok("already working here" in proc.stderr, "it says the folder is busy")
+        t.ok("safe" in proc.stderr, "and that what was typed is not lost")
+        t.ok("./os sort" in proc.stderr, "and how to finish filing it")
+        t.ok("Traceback" not in proc.stderr, "as a sentence")
+    finally:
+        holder.kill()
+        holder.wait(timeout=30)
+        if lock.exists():
+            lock.unlink()
+    staged = list((t.box.root / ".os" / "cache" / "incoming").glob("*"))
+    t.ok(staged, "and the words really are on disk")
+    t.box.run("sort")
+    t.ok(t.box.locate("Northwind contract before Friday") is not None,
+         "where ./os sort picks them up")
+
+
+@test
+def test_the_settling_hook_does_not_drop_what_it_could_not_file(t: Case) -> None:
+    """The mark that something changed was cleared before the rebuild, not
+    after. A rebuild that lost a race — or hit a disk that said no — took the
+    folder's only record that anything had changed with it."""
+    hook = t.box.root / ".claude" / "hooks" / "settle.sh"
+    if not hook.exists():
+        return
+    dirty = t.box.root / ".os" / ".dirty"
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(t.box.root), NO_COLOR="1")
+
+    dirty.write_text("")
+    proc = subprocess.run(["bash", str(hook)], capture_output=True, text=True,
+                          env=env, timeout=120)
+    t.eq(proc.returncode, 0, "it never fails a session")
+    t.ok(not dirty.exists(), "a rebuild that worked clears the mark")
+
+    # now make the rebuild impossible and check the mark comes back
+    launcher = t.box.root / "os"
+    keep = launcher.read_text(encoding="utf-8")
+    try:
+        launcher.write_text("#!/usr/bin/env bash\nexit 3\n", encoding="utf-8")
+        dirty.write_text("")
+        proc = subprocess.run(["bash", str(hook)], capture_output=True, text=True,
+                              env=env, timeout=120)
+        t.eq(proc.returncode, 0, "and still never fails a session")
+        t.ok(dirty.exists(), "a rebuild that did not happen keeps the mark for next time")
+    finally:
+        launcher.write_text(keep, encoding="utf-8")
+        launcher.chmod(0o755)
+        if dirty.exists():
+            dirty.unlink()
 
 
 # ---------------------------------------------------------------------------
