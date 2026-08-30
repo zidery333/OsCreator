@@ -59,7 +59,8 @@ Trading, diet, lifting: rival schools, so `./os new ongoing "<Subject>"`, one fi
 per school, never blended. Mixing one school's entries with another's risk rules
 is how people get hurt.
 
-`.os/templates/learning.md` is the shape and `NOTE.md` here is how to fill it.
+`./os new learning "<title>"` writes the note already in the right shape, and
+`NOTE.md` here is how to fill it.
 
 Then teach the folder the words — eight to fifteen terms this subject uses that
 the folder doesn't, minus anything another domain already owns:

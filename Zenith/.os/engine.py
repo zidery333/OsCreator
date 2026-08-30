@@ -3419,6 +3419,25 @@ class Reviewer:
                         "where": self.os.rel(it.path), "said": said})
         return out[:limit]
 
+    #: Transcripts are pulled again on demand and never opened twice by most
+    #: people, so they are never deleted for anybody — but they are the only
+    #: thing here that grows without being asked, and nothing else in the folder
+    #: would ever mention them. Past this many, the weekly pass says so once.
+    STUDY_CACHE_NAG = 20
+
+    def study_cache(self) -> dict:
+        """What `./os learn` has fetched and kept, if anything.
+
+        Not a fault and never repaired automatically: they are somebody's
+        sources. This is the one place they are visible at all."""
+        cache = self.os.dot / "transcripts"
+        try:
+            files = [p for p in cache.glob("*.txt") if p.is_file()]
+            size = sum(p.stat().st_size for p in files)
+        except OSError:
+            return {"sources": 0, "bytes": 0}
+        return {"sources": len(files), "bytes": size}
+
     def run(self) -> dict:
         items = self.scanner.scan()
         health = Doctor(self.os).run(items=items)
@@ -3458,6 +3477,7 @@ class Reviewer:
             # Things being kept up by hand that could be handed to an AI. This
             # is the only place the product ever mentions skills unprompted.
             "routines": self.routines(items),
+            "study_cache": self.study_cache(),
             "issues": health["issues"],
         }
         self.os.config.setdefault("review", {})["last_run"] = today()
@@ -3475,6 +3495,7 @@ KIND_ALIASES = {
     "ongoing": "project", "area": "project", "a": "project",
     "pushing": "project", "holding": "project", "hold": "project",
     "note": "note", "n": "note", "ref": "note", "reference": "note",
+    "learning": "note", "learn": "note", "method": "note",
     "skill": "skill", "s": "skill",
     "helper": "agent", "agent": "agent", "subagent": "agent",
 }
@@ -3484,6 +3505,15 @@ KIND_ALIASES = {
 #: start it being pushed, because that is what somebody typing `os new` is
 #: nearly always doing.
 NEW_STATUS = {"ongoing": HOLDING, "area": HOLDING, "holding": HOLDING, "hold": HOLDING}
+
+#: …and one of them says which *blueprint*, the same way `ongoing` does for
+#: work. A note about how something is done wants numbered steps, the
+#: disagreement, what goes wrong and a practice run; an ordinary note wants
+#: none of that. `.os/templates/learning.md` has been the shape /learn is held
+#: to since it was written, and until this existed the only way to reach it was
+#: to make an ordinary note and retype its headings by hand — which is a thing
+#: that gets skipped, and did.
+NEW_SHAPE = {"learning": "learning", "learn": "learning", "method": "learning"}
 
 
 class Creator:
@@ -3495,19 +3525,21 @@ class Creator:
     #: what a template file is called, when that differs from the internal name
     TEMPLATE_NAMES = {"project": "pushing"}
 
-    def template(self, kind: str, status: str = "") -> str:
-        """The blueprint for a kind, and — for work — for the phase it is in.
+    def template(self, kind: str, shape: str = "") -> str:
+        """The blueprint for a kind, and — where there is more than one — which.
 
         Both halves of a piece of work ask *what does good look like here*.
         They differ only below that: pushing wants a next action, holding wants
-        a cadence. So there are two blueprints and one kind. Cached: filing a
-        big drop asks for the same handful of templates hundreds of times."""
-        key = f"{kind}:{status}"
+        a cadence. So there are two blueprints and one kind, and the same is
+        true of notes: `learning.md` is a note in the shape a method has to be
+        written in to be worth anything. Cached: filing a big drop asks for the
+        same handful of templates hundreds of times."""
+        key = f"{kind}:{shape}"
         if key in self._cache:
             return self._cache[key]
         names = []
-        if kind == "project" and status:
-            names.append(status)
+        if shape:
+            names.append(shape)
         names += [self.TEMPLATE_NAMES.get(kind, kind), kind]
         for name in names:
             path = self.templates / f"{name}.md"
@@ -3517,9 +3549,12 @@ class Creator:
                 "domain: {{DOMAIN}}\ntags: [{{TAGS}}]\ncreated: {{DATE}}\n"
                 "updated: {{DATE}}\n---\n\n# {{TITLE}}\n")
 
-    def render(self, kind: str, title: str, ident: str, domain: str,
-               tags: list[str], status: str = "") -> str:
-        text = self.template(kind, status)
+    def render(self, kind: str, title: str, ident: str, domain: str, tags: list[str],
+               status: str = "", shape: str = "") -> str:
+        # Work picks its blueprint by the phase it starts in, so `status` is
+        # already the answer there; a note has no phase and says which shape it
+        # wants outright.
+        text = self.template(kind, shape or status)
         for key, value in {
             "{{ID}}": ident, "{{TITLE}}": title, "{{SLUG}}": slugify(title),
             "{{KIND}}": TYPE_ON_DISK.get(kind, kind), "{{STATUS}}": status or "—",
@@ -3540,11 +3575,14 @@ class Creator:
         asked = kind.lower()
         kind = KIND_ALIASES.get(asked, "")
         if not kind:
-            die("that is not a kind — try one of: work, ongoing, note, skill, helper")
+            die("that is not a kind — try one of: work, ongoing, note, learning, "
+                "skill, helper")
         if kind == "project":
             status = status or NEW_STATUS.get(asked, PUSHING)
+            shape = ""
         else:
             status = ""
+            shape = NEW_SHAPE.get(asked, "")
         tags = tags or []
         if not domain:
             # Nobody wants to be asked for a subject. Guess it from the title,
@@ -3598,7 +3636,7 @@ class Creator:
             return folder / "README.md"
 
         path = root / bucket / f"{ident}_{slug}.md"
-        write_text(path, self.render("note", title, ident, domain, tags))
+        write_text(path, self.render("note", title, ident, domain, tags, shape=shape))
         self.os.created(path)
         self.os.save_state()
         self.os.commit(f"new note {ident} — {title}")
@@ -4361,6 +4399,14 @@ def cmd_review(os_: Zenith, argv: list[str]) -> int:
                  + paint("   (or say /make-skill in the chat)", S.FAINT))
         Out.raw()
 
+    cache = report.get("study_cache") or {}
+    if cache.get("sources", 0) > Reviewer.STUDY_CACHE_NAG:
+        Out.raw("  " + paint("SOURCES /LEARN HAS KEPT", S.B, S.GOLD)
+                + paint(f"  ({cache['sources']}, {human_size(cache['bytes'])})", S.FAINT))
+        Out.note("they are fetched again on demand, so they are safe to drop")
+        Out.note("./os learn --cached   lists them   ·   ./os learn --forget <id> …")
+        Out.raw()
+
     if not any([report["unfiled"], report["stale"], report["archive_candidates"],
                 report["duplicates"], report["shipped"], report["unsure"],
                 report.get("routines")]):
@@ -5058,7 +5104,7 @@ _os_complete() {
     COMPREPLY=( $(compgen -W "%s" -- "$cur") ); return
   fi
   case "$prev" in
-    new)   COMPREPLY=( $(compgen -W "work ongoing note skill agent" -- "$cur") ) ;;
+    new)   COMPREPLY=( $(compgen -W "work ongoing note learning skill agent" -- "$cur") ) ;;
     sort)  COMPREPLY=( $(compgen -W "--dry-run --json" -- "$cur") ) ;;
     check) COMPREPLY=( $(compgen -W "--fix --json" -- "$cur") ) ;;
     help)  COMPREPLY=( $(compgen -W "%s" -- "$cur") ) ;;
@@ -5078,7 +5124,7 @@ _os() {
   )
   if (( CURRENT == 2 )); then _describe -t commands 'os' cmds; return; fi
   case ${words[2]} in
-    new) _values 'kind' work ongoing note skill agent ;;
+    new) _values 'kind' work ongoing note learning skill agent ;;
     open|edit|done|back) _message 'a number like W.04' ;;
     sort) _values 'flag' --dry-run --json ;;
     check) _values 'flag' --fix --json ;;
@@ -5128,14 +5174,19 @@ DETAIL = {
              ['os save "the auth token breaks every Friday"',
               "os save ~/Downloads/pricing-deck.pdf"],
              "Wrong place? ./os undo puts it back, every time."),
-    "new": ('os new <work|ongoing|note|skill|agent> "<name>"',
+    "new": ('os new <work|ongoing|note|learning|skill|agent> "<name>"',
             "Start something from a blank template, already numbered. If you "
             "already have something by nearly the same name it stops and says so "
             "— add --anyway if you really want both.",
             ['os new work "Ship the redesign"',
              'os new ongoing "Keep the tests passing"',
              'os new note "How Postgres indexes work"',
+             'os new learning "How sourdough is actually made"',
              'os new skill "Draft the weekly invoice"'],
+            "A learning note is a note in a different shape: numbered steps, "
+            "where the people who do it disagree, what goes wrong, and one "
+            "thing to practise. It is what ./os learn is for — reach for it "
+            "when you want to be able to *do* something, not just look it up. "
             "Work and ongoing are the same kind of thing in two phases: `work` "
             "starts it being pushed, `ongoing` starts it being held. Both live "
             "in Work/, and ./os hold and ./os push move one between them — "

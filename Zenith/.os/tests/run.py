@@ -3454,6 +3454,29 @@ def test_a_source_in_another_language_is_still_a_source(t: Case) -> None:
     t.eq(ranked[0].name, "v.en.vtt", "English wins where it is on offer")
 
 
+@test
+def test_a_learning_note_comes_out_in_the_right_shape(t: Case) -> None:
+    """`.os/templates/learning.md` was the documented shape of a /learn note and
+    nothing could produce it: the only route was an ordinary note with its
+    headings retyped by hand, which is a step that gets skipped, and did."""
+    t.box.run("new", "learning", "How sourdough is actually made")
+    hit = next(p for p in (t.box.root / "Notes").glob("*.md") if "sourdough" in p.name)
+    body = hit.read_text(encoding="utf-8")
+    meta, _ = engine.parse_frontmatter(body)
+    t.eq(meta.get("type"), "note", "it is still a note, in Notes, numbered like one")
+    t.ok(str(meta.get("id", "")).startswith("N."), "with a note's number")
+    for heading in ("## The method", "## Where they disagree", "## What goes wrong",
+                    "## Practice", "## Sources"):
+        t.ok(heading in body, f"and carries {heading}")
+    t.ok("## What it says" not in body, "and not the plain note's headings")
+
+    plain = t.box.run("new", "note", "How Postgres indexes work")
+    t.ok("Traceback" not in plain.stderr, "an ordinary note is untouched")
+    other = next(p for p in (t.box.root / "Notes").glob("*.md") if "postgres" in p.name)
+    t.ok("## What it says" in other.read_text(encoding="utf-8"),
+         "and still gets the ordinary shape")
+
+
 # ---------------------------------------------------------------------------
 # runner
 # ---------------------------------------------------------------------------

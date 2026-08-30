@@ -70,6 +70,7 @@ it is genuinely over.
 ./os save <path>         pull a file in from anywhere
 ./os new work "..."      start something they're pushing on
 ./os new ongoing "..."   start something they'll just keep up
+./os new learning "..."  a note about how something is done, in that shape
 ./os hold <id>           no next action — just keep it level
 ./os push <id>           back on the go
 ./os find <words>        search everything — forgives typos and plurals
@@ -114,9 +115,10 @@ top-level folders, and `Work/W.04_thing/` is yours to shape.
 
 Something they'll want done the same way repeatedly is a skill
 (`./os new skill "..."`); a big job deserving its own clean context is a helper
-(`./os new helper "..."`); a craft they want to be good at is `./os learn`,
-followed by `./os words` to teach the folder its vocabulary. Anything else:
-`./os save` and let the filing decide.
+(`./os new helper "..."`); a craft they want to be good at is `./os learn` for
+the sources, `./os new learning "..."` for the note it becomes, then `./os words`
+to teach the folder its vocabulary. Anything else: `./os save` and let the
+filing decide.
 
 Before answering a how-to, `./os find "<subject>"` — a subject they have learned
 beats your general knowledge, because it is what *they* chose to trust.
