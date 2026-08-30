@@ -5539,10 +5539,15 @@ def main(argv: list[str] | None = None) -> int:
         try:
             os_.initialise()
             Indexer(os_).build()
-            Out.raw()
-            Out.raw("  " + paint("Welcome — this folder is yours now.", S.GOLD)
-                    + paint("   ./os demo", S.FAINT)
-                    + paint(" shows you the whole idea in two minutes.", S.FAINT))
+            # Not a word of it when the answer is being parsed. `--json` means
+            # stdout belongs to whatever is reading it, and a greeting printed
+            # above the object broke the first `./os brief --json` any AI ran in
+            # a folder nobody had opened yet — which is every folder, once.
+            if "--json" not in argv:
+                Out.raw()
+                Out.raw("  " + paint("Welcome — this folder is yours now.", S.GOLD)
+                        + paint("   ./os demo", S.FAINT)
+                        + paint(" shows you the whole idea in two minutes.", S.FAINT))
         except OSError:
             pass
 

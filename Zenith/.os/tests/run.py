@@ -116,6 +116,11 @@ class Sandbox:
         state = self.root / ".os" / "state.json"
         state.write_text(json.dumps(
             {"counters": {}, "undo": [], "history": [], "created": "test"}, indent=2))
+        # Snags are the folder's own bug list, and `./os test` is offered to
+        # whoever is using it — so the suite has to start with none of theirs.
+        # Copied in, two snags they had already recorded made the test that
+        # counts them fail, in their folder, about nothing they had done.
+        (self.root / ".os" / "snags.json").write_text("[]\n")
 
     # -- driving the real CLI ------------------------------------------------
 
@@ -432,6 +437,7 @@ def test_the_folder_records_what_is_wrong_with_itself(t: Case) -> None:
     in one command, and the repeats are counted: the same snag six times is a
     different job from one seen once, and that count is the one piece of
     evidence whoever maintains the template cannot get any other way."""
+    t.eq(t.box.json("snag")["snags"], [], "the suite starts with none of the folder's own")
     quiet = t.box.run("snag", "sort filed a photo as a project, not a note")
     t.ok("noted" in quiet.stdout, "it says one short line and gets out of the way")
 
@@ -3475,6 +3481,30 @@ def test_a_learning_note_comes_out_in_the_right_shape(t: Case) -> None:
     other = next(p for p in (t.box.root / "Notes").glob("*.md") if "postgres" in p.name)
     t.ok("## What it says" in other.read_text(encoding="utf-8"),
          "and still gets the ordinary shape")
+
+
+@test
+def test_machine_output_is_only_ever_the_object(t: Case) -> None:
+    """The very first command in a folder nobody has opened prints a welcome,
+    and it printed it above the JSON — so the first `./os brief --json` any AI
+    ran in any fresh folder came back unparseable. Which is every folder, once."""
+    state = t.box.root / ".os" / "state.json"
+    keep = state.read_text()
+    try:
+        data = json.loads(keep)
+        data["fresh"] = True
+        state.write_text(json.dumps(data, indent=2))
+        proc = t.box.run("brief", "--json")
+        json.loads(proc.stdout)          # raises, and fails the test, if it is not
+        t.ok("Welcome" not in proc.stdout, "no greeting on the machine's channel")
+
+        # and the greeting is not simply gone: a person still gets it
+        data["fresh"] = True
+        state.write_text(json.dumps(data, indent=2))
+        t.ok("Welcome" in t.box.run("status").stdout, "a person opening it is still greeted")
+    finally:
+        state.write_text(keep)
+        t.box.run("index")
 
 
 # ---------------------------------------------------------------------------
