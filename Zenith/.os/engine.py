@@ -543,6 +543,51 @@ def parse_frontmatter(text: str):
 #: truncates every tag after it — so list items get a stricter test than scalars.
 _NEEDS_QUOTES_IN_LIST = re.compile(r"[,\[\]{}]|^\s|\s$")
 
+#: A line break and everything that behaves like one. Front matter is read a
+#: line at a time, so any of these inside a value is not a value any more.
+_LINE_BREAK = re.compile(r"[\r\n\v\f\t\x85\u2028\u2029]+")
+
+
+#: A number as this folder writes it: a bucket's letter, a dot, and a count
+#: padded to two digits. `W.4` and `w.04` are the same thing said differently.
+_IDENT = re.compile(r"^([A-Za-z]|\d{1,2})\.(\d{1,4})$")
+
+
+def canonical_id(text: str) -> str:
+    """A number typed any reasonable way, spelled the way it is on disk.
+
+    Numbers are printed `W.04` and nothing said they had to be typed that way,
+    so `./os show w.01` and `./os show W.1` both answered "nothing here is
+    numbered that" about an item sitting right there. They are read aloud far
+    more often than they are copied, and neither the capital nor the leading
+    zero survives being read aloud."""
+    hit = _IDENT.match(str(text).strip())
+    if not hit:
+        return str(text).strip()
+    return f"{hit.group(1).upper()}.{int(hit.group(2)):02d}"
+
+
+def one_line(text: str) -> str:
+    """A string with no way out of the line it is written on.
+
+    Front matter is `key: value`, one per line, so a title carrying a newline
+    does not become a two-line title — it becomes a second *key*. Pasting
+
+        os new note "Harmless
+        id: W.99"
+
+    wrote an item numbered N.07 on disk that told everything reading it it was
+    W.99: the index listed a number no file had, and `./os close W.99` would
+    have archived a different item than the one anybody meant. Titles come from
+    the clipboard as often as the keyboard, so this is one paste away rather
+    than an attack, and the fix belongs here — at the point every value passes
+    through — instead of at each of the places one can be typed.
+
+    Collapses, never trims: a tag written `" lead"` is written back with its
+    space, because `_emit` already quotes anything with one and somebody who
+    typed it meant it."""
+    return _LINE_BREAK.sub(" ", str(text))
+
 
 def _emit(value, key: str | None = None, in_list: bool = False) -> str:
     if key in STRING_KEYS and isinstance(value, str) and re.fullmatch(r"-?\d+(\.\d+)?", value):
@@ -555,7 +600,7 @@ def _emit(value, key: str | None = None, in_list: bool = False) -> str:
         return str(value)
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(_emit(v, key, in_list=True) for v in value) + "]"
-    text = str(value)
+    text = one_line(value)
     if text == "":
         return '""'
     if re.search(r"^[\s>|&*!%@`{\[]|:\s|#\s|\"|'|:$", text) \
@@ -2286,8 +2331,27 @@ def md_cell(text: str, link_text: bool = False) -> str:
     A title reading `Bench | results [draft]` is ordinary English and a broken
     table row: the pipe opens a column that is not there, and the brackets eat
     the link. Nobody should have to avoid punctuation to be indexed."""
-    out = str(text).replace("|", "\\|")
+    out = one_line(text).replace("|", "\\|")
     return out.replace("[", "\\[").replace("]", "\\]") if link_text else out
+
+
+#: What breaks a link target once markdown has read it. The space was always
+#: here. The rest arrived with a file somebody had named across two lines: the
+#: newline ended the table row halfway through the link, so that row and the one
+#: after it both stopped being rows. Percent-encoding is the escape markdown
+#: understands, and it leaves anything not listed — accents, kanji — readable.
+_LINK_ESCAPES = {" ": "%20", "\t": "%09", "\n": "%0A", "\r": "%0D",
+                 "(": "%28", ")": "%29", "|": "%7C", "<": "%3C", ">": "%3E",
+                 '"': "%22", "'": "%27", "`": "%60"}
+
+
+def md_link(target: str) -> str:
+    """A path that is still one link, pointing where it did, after markdown.
+
+    Escaped rather than flattened: `one_line` would turn the newline in the
+    name into a space and quietly aim the link at a file that does not
+    exist."""
+    return "".join(_LINK_ESCAPES.get(ch, ch) for ch in str(target))
 
 HOOK_BLURBS = {
     "session-start.sh": "Tells your AI where things stand, before you say anything.",
@@ -2372,8 +2436,8 @@ class Indexer:
                 lines += ["| Number | Name | State | Last touched |",
                           "| --- | --- | --- | --- |"]
                 for it in group:
-                    link = (relative_to_root(it.path, self.os.root)
-                            if it.path.exists() else "").replace(" ", "%20")
+                    link = md_link(relative_to_root(it.path, self.os.root)
+                                   if it.path.exists() else "")
                     lines.append(f"| `{it.ident or '—'}` | "
                                  f"[{md_cell(it.title, link_text=True)}]({link}) | "
                                  f"{md_cell(it.status or '—')} | {it.updated or '—'} |")
@@ -2974,8 +3038,12 @@ class Finder:
         ident = ident.strip()
         if not ident:
             return None
+        wanted = {ident, canonical_id(ident)}
+        folded = {w.lower() for w in wanted}
         for it in self.scanner.scan():
-            if it.ident == ident or it.path.name.startswith(ident + "_"):
+            if it.ident.lower() in folded:
+                return it
+            if any(it.path.name.lower().startswith(w + "_") for w in folded):
                 return it
         return None
 
@@ -3330,7 +3398,11 @@ class Creator:
             "{{OWNER}}": str(self.os.config.get("owner") or ""),
             "{{OS_NAME}}": str(self.os.config.get("name", "Zenith")),
         }.items():
-            text = text.replace(key, value)
+            # Every blueprint puts {{TITLE}} on a front-matter line as well as
+            # in a heading, so anything substituted in has to stay on the line
+            # it lands on: `_emit` only guards values that go through it, and a
+            # template substitution never does. See `one_line`.
+            text = text.replace(key, one_line(value))
         return text
 
     def create(self, kind: str, title: str, domain: str = "", tags: list[str] | None = None,

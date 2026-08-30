@@ -3115,6 +3115,74 @@ def test_empty_buckets_stay_quiet(t: Case) -> None:
          "and tells the AI not to open with a wall of commands")
 
 
+@test
+def test_a_title_cannot_write_its_own_front_matter(t: Case) -> None:
+    """A newline in a title used to become a second front-matter *key*.
+
+        os new note "Harmless
+        id: W.99"
+
+    wrote a file numbered N.07 on disk that told everything reading it it was
+    W.99. The index listed a number no file had; `./os close W.99` would have
+    archived something else. Titles arrive from the clipboard as often as the
+    keyboard, so this is one paste away."""
+    t.box.run("new", "note", "Harmless\ndomain: engineering\nid: W.99")
+    hit = next(p for p in (t.box.root / "Notes").glob("*.md") if "harmless" in p.name)
+    meta, _ = engine.parse_frontmatter(hit.read_text(encoding="utf-8"))
+    t.ok(str(meta.get("id", "")).startswith("N."),
+         f"the number in the file is the one it was given (got {meta.get('id')!r})")
+    t.eq(meta.get("domain"), "unsorted", "and the injected subject did not take")
+    t.ok("\n" not in str(meta.get("title", "")), "the title is one line")
+    t.ok("W.99" in str(meta.get("title", "")), "with every word of it kept")
+
+    # and the same through the other door: a value stamped into an existing file
+    stamped = engine.compose({"id": "N.99", "title": "One\nTwo: three"}, "body")
+    again, _ = engine.parse_frontmatter(stamped)
+    t.eq(again.get("id"), "N.99", "a stamped value cannot displace the number either")
+    t.ok("\n" not in str(again.get("title", "")), "and is written on one line")
+
+
+@test
+def test_a_number_can_be_typed_the_way_it_is_read_aloud(t: Case) -> None:
+    """`W.04` is printed with a capital and a leading zero and neither survives
+    being read out. Both spellings used to answer "nothing here is numbered
+    that" about an item sitting right there."""
+    t.box.run("save", "The billing rewrite has to ship before the audit")
+    ident = t.box.items()[0]["id"] if t.box.items() else ""
+    t.ok(ident, "something was filed and numbered")
+    letter, number = ident.split(".")
+    for spelling in (ident, ident.lower(), f"{letter}.{int(number)}",
+                     f"{letter.lower()}.{int(number)}"):
+        proc = t.box.run("show", spelling)
+        t.ok(ident in proc.stdout, f"`./os show {spelling}` finds {ident}")
+    t.box.run("show", "N.4242", expect=1)
+
+
+@test
+def test_the_index_survives_a_filename_written_across_two_lines(t: Case) -> None:
+    """A newline in a name split one table row in half and took the next one
+    with it. Pipes and brackets were already handled; this was not."""
+    awkward = t.box.root / "Notes" / "two\nlines (and parens).md"
+    try:
+        awkward.write_text("# Two lines\n\nSomething to look up later.\n", encoding="utf-8")
+    except OSError:
+        return                      # a filesystem that will not take it at all
+    t.box.run("index")
+    lines = (t.box.root / "INDEX.md").read_text(encoding="utf-8").split("\n")
+    for i, line in enumerate(lines):
+        if not line.startswith("|"):
+            continue
+        t.ok(line.rstrip().endswith("|"),
+             f"no row stops halfway through: {line[:90]!r}")
+        t.ok(line.count("[") == line.count("]") and line.count("(") == line.count(")"),
+             f"and no link is left open at the end of one: {line[:90]!r} (line {i})")
+    items = [line for line in lines if line.startswith("| `")]
+    for row in items:
+        t.eq(row.count("|") - row.count("\\|"), 5,
+             f"every item row still has its four columns: {row[:90]!r}")
+    t.ok(any("%0A" in row for row in items), "and the awkward name is still linked")
+
+
 # ---------------------------------------------------------------------------
 # runner
 # ---------------------------------------------------------------------------
