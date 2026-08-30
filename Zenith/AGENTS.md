@@ -95,8 +95,8 @@ refuses a near-duplicate too; read what it found.
 The rest of this file is guidance you may use your own judgement about. These
 five protect their data, and are not.
 
-1. **Move files with `./os`, never by hand.** `save`, `new`, `sort`, `close` and
-   `back` record every change so `./os undo` works; a manual `mv` breaks that
+1. **Move files with `./os`, never by hand.** `save`, `new`, `sort`, `close`,
+   `back`, `hold` and `push` record every change so `./os undo` works; a manual `mv` breaks that
    silently, and undo cannot recover hand edits either — only what `./os` did.
 2. **Never delete the user's content.** `./os close <id>` instead. If they ask for
    a real deletion, say exactly what will be lost and ask once.
